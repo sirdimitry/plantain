@@ -1,0 +1,16 @@
+build/
+dist/
+.build/
+.swiftpm/
+.DS_Store
+__pycache__/
+*.pyc
+*.har
+*.dmg
+*.zip
+.env
+.env.*
+*.p12
+*.p8
+*.mobileprovision
+*.keychain*
