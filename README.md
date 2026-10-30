@@ -2,17 +2,23 @@
 
 # Подорожник
 
-**macOS: 1.1.1 · стабильная версия.** Этот README описывает приложение для macOS.
-
-Доступна **рабочая версия для Windows 10/11 x64 — 0.1.0-dev.8** (предварительный выпуск): **[скачать установщик Windows](https://github.com/sirdimitry/plantain/releases/download/windows-v0.1.0-dev.8/Plantain-0.1.0-dev.8-win-x64-Setup.exe)** · [Portable ZIP](https://github.com/sirdimitry/plantain/releases/download/windows-v0.1.0-dev.8/Plantain-0.1.0-dev.8-win-x64.zip) · [инструкция и скриншот](https://github.com/sirdimitry/plantain/blob/windows/windows/README.md). Установщик с вертикальным баннером и иконкой создаёт ярлыки, включает .NET и работает без загрузки зависимостей и обязательных прав администратора. Windows поддерживает загрузку папок и файлов, продолжение, проверку целостности, список ошибок и проверку обновлений при запуске. Фактически проверена Windows 11 x64; проверка Windows 10 и расширенная приёмка продолжаются. Код Windows находится в отдельной ветке [`windows`](https://github.com/sirdimitry/plantain/tree/windows). Ниже — описание стабильной версии для macOS.
-
 **Подорожник — скачает, когда Диск не может.**
 
 Небольшое приложение для macOS: скачивает публичную папку Яндекс Диска со всеми вложениями, повторяет неудачные попытки и продолжает загрузку после обрыва. Без Python, Терминала и входа в аккаунт.
 
-[Скачать DMG](https://github.com/sirdimitry/plantain/releases/latest) · [Приватность](docs/PRIVACY.md)
+**macOS: 1.1.1 · стабильная версия.**
 
-## Как пользоваться
+**[Скачать для macOS — DMG](https://github.com/sirdimitry/plantain/releases/latest)** · [Приватность](docs/PRIVACY.md)
+
+### Версия для Windows
+
+Есть **рабочая версия для Windows 10/11 x64 — 0.1.0-dev.8** (предварительный выпуск). Установщик с нашим вертикальным баннером и иконкой включает .NET и создаёт ярлыки; устанавливать зависимости отдельно не нужно.
+
+**[Скачать установщик для Windows](https://github.com/sirdimitry/plantain/releases/download/windows-v0.1.0-dev.8/Plantain-0.1.0-dev.8-win-x64-Setup.exe)** · [Страница Windows-версии: инструкция, скриншот и другие варианты загрузки](https://github.com/sirdimitry/plantain/blob/windows/windows/README.md)
+
+Фактически проверена Windows 11 x64; проверка Windows 10 и расширенная приёмка продолжаются. Разработка Windows ведётся в отдельной ветке [`windows`](https://github.com/sirdimitry/plantain/tree/windows). Ниже — инструкция для macOS.
+
+## Как пользоваться на macOS
 
 1. Перетащите **Plantain.app** из DMG в «Программы».
 2. Вставьте публичную ссылку на папку или файл.
