@@ -1,7 +1,14 @@
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+# FIX: порт берётся из окружения, чтобы занятый 18876 не ломал проверки.
+PORT = int(os.environ.get('TEST_PORT', '18876'))
 class Handler(BaseHTTPRequestHandler):
  def log_message(self,*args): pass
  def do_GET(self):
+  # FIX: постоянная ошибка API для проверки, что 400 не повторяется.
+  if self.path.startswith('/v1/disk'):
+   self.send_response(400);self.send_header('Content-Length','0');self.end_headers()
+   return
   data=b'abcdef'
   if self.path=='/slow':
    import time
@@ -20,4 +27,4 @@ class Handler(BaseHTTPRequestHandler):
    self.send_response(206 if offset else 200)
    if offset:self.send_header('Content-Range',f'bytes {offset}-5/6')
   self.send_header('Content-Length',str(len(data)-offset));self.end_headers();self.wfile.write(data[offset:])
-ThreadingHTTPServer(('127.0.0.1',18876),Handler).serve_forever()
+ThreadingHTTPServer(('127.0.0.1',PORT),Handler).serve_forever()

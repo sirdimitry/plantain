@@ -17,6 +17,12 @@ func timeText(_ seconds: Double) -> String {
 }
 
 @MainActor final class LoaderModel: ObservableObject {
+    // FIX: раньше «Загрузки» брались через [0] без проверки, и на системе без
+    // этой папки приложение падало при запуске. Теперь есть запасной вариант.
+    nonisolated static var downloadsURL: URL {
+        FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser
+    }
     @Published var link = ""
     @Published var running = false
     @Published var stopping = false
@@ -34,7 +40,7 @@ func timeText(_ seconds: Double) -> String {
     @Published var current: Int64 = 0
     @Published var verifying = false
     @Published var folder: URL?
-    @Published var destination = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+    @Published var destination = LoaderModel.downloadsURL
     @Published var networkBytes: Int64 = 0
     @Published var elapsed: Double = 0
     private var started: Date?
@@ -101,10 +107,25 @@ func timeText(_ seconds: Double) -> String {
         case .totals(let files, let old, let size, let failures):
             done = files; skipped = old; completed = size; errors = failures
             if !verifying { current = 0; file = ""; fileSize = 0 }
-        case .finished(let failures):
+        case .finished(let failures, let sizeOnly):
             current = 0; file = ""; fileSize = 0; verifying = false
             finished = true
-            status = failures.isEmpty ? (count == 0 ? "Папка пуста — структура сохранена" : "Все файлы скачаны и проверены") : "Осталось скачать: \(count-done). Можно повторить загрузку."
+            // FIX: прежний текст «Осталось скачать: count-done» включал конфликтные
+            // файлы, которые приложение принципиально не перезаписывает, поэтому
+            // число не уменьшалось при повторных запусках. Теперь виден реальный итог.
+            // FIX: и отдельно называем файлы, проверенные только по размеру, иначе
+            // «скачаны и проверены» вводило бы в заблуждение.
+            if failures.isEmpty {
+                if count == 0 {
+                    status = "Папка пуста — структура сохранена"
+                } else if sizeOnly == 0 {
+                    status = "Все файлы скачаны и проверены"
+                } else {
+                    status = "Все файлы на месте. \(sizeOnly) проверено только по размеру: сервер не отдал контрольную сумму."
+                }
+            } else {
+                status = "Готово \(done) из \(count). Ошибок: \(failures.count). Можно повторить загрузку."
+            }
             if !failures.isEmpty {
                 error = "\(failures.count) ошибок. " + failures.prefix(2).joined(separator: "\n")
             }
@@ -122,7 +143,7 @@ func timeText(_ seconds: Double) -> String {
         status = "Останавливаю и сохраняю загрузку…"
         task?.cancel()
     }
-    var defaultDestination: URL { FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0] }
+    var defaultDestination: URL { Self.downloadsURL }
     var isDefaultDestination: Bool { destination.standardizedFileURL == defaultDestination.standardizedFileURL }
     var destinationLabel: String { isDefaultDestination ? "Загрузки" : destination.path }
     func setDestination(_ url: URL) {

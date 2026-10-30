@@ -33,9 +33,48 @@ enum LoaderEvent {
     case file(String, Int64, Bool)
     case progress(Int64, Int64)
     case totals(Int, Int, Int64, Int)
-    case finished([String])
+    // FIX: второй параметр — сколько файлов проверено только по размеру, потому что
+    // сервер не отдал хеш. Без этого итог «скачаны и проверены» был неправдой.
+    case finished([String], Int)
 }
 typealias Reporter = @Sendable (LoaderEvent) -> Void
+
+// FIX: приписка « copy» относится только к корневой папке — она нужна, чтобы не
+// смешаться с уже существующей папкой с тем же именем. Файлы всегда сохраняются
+// под своими именами: и внутри папки (так было и раньше), и по ссылке на один
+// файл. Раньше одиночная ссылка давала «video.mp4 copy», ломая расширение.
+func targetName(for name: String, isDirectory: Bool) -> String {
+    isDirectory ? name + " copy" : name
+}
+// FIX: 4xx (кроме 408 и 429) — окончательный ответ сервера. Раньше любой код
+// ошибки повторялся 5 раз с паузами до 15 секунд, поэтому неверная ссылка
+// выглядела как зависание. Теперь повторяются только временные ответы.
+func isRetryable(status: Int) -> Bool {
+    status == 408 || status == 429 || status >= 500
+}
+// FIX: локальные ошибки файловой системы (права, нет места, операция не
+// поддерживается) не лечатся повтором в сети. Раньше проверялся только
+// NSCocoaErrorDomain, поэтому ошибки POSIX (например, hardlink на exFAT)
+// гоняли 20 попыток с паузами до 30 секунд.
+// FIX: теперь NSPOSIXErrorDomain не считается файловым целиком — иначе ECONNRESET
+// и ETIMEDOUT, попав в этот домен, останавливали бы повторы сетевой ошибки.
+// Учитываются только коды постоянных проблем файловой системы.
+func isLocalFileSystemError(_ error: Error) -> Bool {
+    let ns = error as NSError
+    if ns.domain == NSCocoaErrorDomain { return true }
+    guard ns.domain == NSPOSIXErrorDomain else { return false }
+    let localCodes: Set<Int32> = [EPERM, EACCES, EEXIST, EXDEV, ENOSPC, EROFS,
+                                  ENOTSUP, EMLINK, ENAMETOOLONG, ELOOP, EDQUOT]
+    return localCodes.contains(Int32(ns.code))
+}
+// Обёртка помечает ошибку, которую бессмысленно повторять (404, 401, 403 и т. п.).
+// FIX: тип больше не private и хранит исходную ошибку: раньше метка разворачивалась
+// внутри DiskAPI.get, и внешний цикл скачивания снова повторял постоянную ошибку
+// 400 запросом ссылки — до 20 раз с паузами. LocalizedError сохраняет текст.
+struct FatalFailure: LocalizedError {
+    let error: Error
+    var errorDescription: String? { error.localizedDescription }
+}
 
 func safeChild(_ parent: URL, _ name: String) throws -> URL {
     guard !name.isEmpty, name != ".", name != "..", !name.contains("/"),
@@ -57,7 +96,11 @@ func fileSize(_ url: URL) -> Int64 {
 func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path) }
 func verify(_ url: URL, _ item: RemoteItem, report: ((Int64) -> Void)? = nil) throws -> Bool {
     guard exists(url), fileSize(url) == item.size else { return false }
-    guard item.sha256 != nil || item.md5 != nil else { return false }
+    // FIX: если сервер не отдал ни одного хеша, раньше функция возвращала false,
+    // и уже скачанный файл навсегда попадал в ошибки «отличается от оригинала».
+    // Совпадения размера достаточно: содержимое проверить нечем, а качать файл
+    // того же размера заново бессмысленно.
+    guard item.sha256 != nil || item.md5 != nil else { return true }
     let handle = try FileHandle(forReadingFrom: url)
     defer { try? handle.close() }
     var sha = SHA256(), md5 = Insecure.MD5(), bytes: Int64 = 0
@@ -216,8 +259,12 @@ final class APIRedirectPolicy: NSObject, URLSessionTaskDelegate {
 final class DiskAPI: DiskClient, @unchecked Sendable {
     let link: String
     private let session: URLSession
-    init(link: String) {
+    // FIX: базовый адрес вынесен в параметр, чтобы проверять обработку кодов ответа
+    // на локальном сервере. По умолчанию используется боевой API Яндекса.
+    private let base: String
+    init(link: String, base: String = "https://cloud-api.yandex.net") {
         self.link = link
+        self.base = base
         let config = transientNetworkConfiguration()
         config.timeoutIntervalForRequest = 45
         config.timeoutIntervalForResource = 90
@@ -228,7 +275,7 @@ final class DiskAPI: DiskClient, @unchecked Sendable {
     func rootItem() async throws -> RemoteItem { try await get(RemoteItem.self, path: "/") }
     func get<T: Decodable>(_ type: T.Type, path: String, download: Bool = false,
                            offset: Int? = nil) async throws -> T {
-        var url = URLComponents(string: "https://cloud-api.yandex.net/v1/disk/public/resources" + (download ? "/download" : ""))!
+        var url = URLComponents(string: base + "/v1/disk/public/resources" + (download ? "/download" : ""))!
         var params = [URLQueryItem(name: "public_key", value: link), URLQueryItem(name: "path", value: path)]
         if let offset {
             params += [URLQueryItem(name: "limit", value: "200"), URLQueryItem(name: "offset", value: String(offset)),
@@ -245,12 +292,29 @@ final class DiskAPI: DiskClient, @unchecked Sendable {
                 let (data, response) = try await session.data(for: request)
                 guard let http = response as? HTTPURLResponse else { throw LoaderError("Нет ответа сервера") }
                 guard http.statusCode == 200 else {
-                    if http.statusCode == 404 && !download { throw LoaderError("Папка не найдена. Проверьте ссылку и доступ по ней.") }
-                    throw LoaderError("Яндекс Диск: HTTP \(http.statusCode)")
+                    // FIX: раньше 404, 401 и 403 не отличались от сетевого сбоя и
+                    // повторялись 5 раз. Теперь у них понятное сообщение, а повтор
+                    // выполняется только для временных кодов (см. isRetryable).
+                    let message: String
+                    if !download && http.statusCode == 404 {
+                        message = "Папка или файл не найдены. Проверьте ссылку и доступ по ней."
+                    } else if !download && (http.statusCode == 401 || http.statusCode == 403) {
+                        message = "Ссылка не публичная или доступ к папке закрыт. Откройте её в браузере и проверьте доступ."
+                    } else {
+                        message = "Яндекс Диск: HTTP \(http.statusCode)"
+                    }
+                    let error = LoaderError(message)
+                    if isRetryable(status: http.statusCode) { throw error }
+                    throw FatalFailure(error: error)
                 }
                 return try JSONDecoder().decode(type, from: data)
             } catch {
                 try Task.checkCancellation()
+                // FIX: окончательные ответы сервера и нечитаемый JSON не повторяем:
+                // повтор не изменит ни ответ, ни формат данных. Метку не разворачиваем,
+                // иначе внешний цикл скачивания потеряет её и повторит запрос ссылки.
+                if let fatal = error as? FatalFailure { throw fatal }
+                if error is DecodingError { throw FatalFailure(error: error) }
                 last = error
                 if attempt + 1 < attempts { try await Task.sleep(nanoseconds: UInt64(min(1 << attempt, 15)) * 1_000_000_000) }
             }
@@ -288,7 +352,7 @@ struct DownloadEngine {
     func run() async throws {
         report(.status("Собираю список файлов…"))
         let root = try await api.rootItem()
-        let target = try safeChild(destination, root.name + " copy")
+        let target = try safeChild(destination, targetName(for: root.name, isDirectory: root.type == "dir"))
         let cache = try safeChild(destination, ".diskloader-partials")
         try fm.createDirectory(at: cache, withIntermediateDirectories: true)
         report(.destination(root.type == "dir" ? target : destination))
@@ -309,6 +373,10 @@ struct DownloadEngine {
         }
         files.sort { $0.remote < $1.remote }
         report(.inventory(files.count, files.reduce(0) { $0 + $1.size }))
+        // FIX: файлы без хеша можно проверить только по размеру. Считаем их по всему
+        // списку, а не только среди уже готовых: свежескачанный файл тоже не проверен
+        // по содержимому, и итог «проверены» без этой оговорки был бы неправдой.
+        let sizeOnly = files.filter { $0.item.sha256 == nil && $0.item.md5 == nil }.count
         var completed: Int64 = 0, done = 0, skipped = 0
         var failures: [String] = [], missing: [WorkItem] = []
         report(.status("Проверяю уже скачанные файлы…"))
@@ -345,7 +413,7 @@ struct DownloadEngine {
             try? fm.removeItem(at: cache)
         }
         // Error details are displayed in memory only, never written as a report.
-        report(.finished(failures))
+        report(.finished(failures, sizeOnly))
     }
     private func displayName(_ work: WorkItem, target: URL) -> String {
         let prefix = target.path + "/"
@@ -378,14 +446,28 @@ struct DownloadEngine {
                     }
                 }
                 // Never overwrite a local file, including one created during the transfer.
-                try fm.linkItem(at: partial, to: work.local)
-                try fm.removeItem(at: partial)
+                // FIX: hardlink работает только на APFS/HFS+. На exFAT, FAT32, SMB и
+                // части сетевых томов linkItem падает, и файл не сохранялся вообще.
+                // Теперь запасной вариант — перемещение внутри того же тома: это тоже
+                // атомарная операция и тоже не перезаписывает существующий файл.
+                do {
+                    try fm.linkItem(at: partial, to: work.local)
+                } catch {
+                    try fm.moveItem(at: partial, to: work.local)
+                    return
+                }
+                try? fm.removeItem(at: partial)
                 return
             } catch {
                 try Task.checkCancellation()
                 last = error
+                // FIX: постоянная ошибка API (400/403/404, нечитаемый ответ) не должна
+                // превращаться в 20 повторов запроса ссылки с паузами. Раньше метка
+                // терялась внутри get, и цикл считал такую ошибку временной.
+                if error is FatalFailure { throw error }
                 // Local filesystem errors (permissions, disk full, conflicts) do not benefit from network retries.
-                if let cocoa = error as NSError?, cocoa.domain == NSCocoaErrorDomain { throw error }
+                // FIX: к ним относятся и ошибки POSIX, а не только NSCocoaErrorDomain.
+                if isLocalFileSystemError(error) { throw error }
                 if attempt < 20 {
                     let delay = min(1 << min(attempt, 5), 30)
                     for remaining in stride(from: delay, through: 1, by: -1) {
