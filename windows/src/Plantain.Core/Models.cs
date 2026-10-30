@@ -28,6 +28,8 @@ public interface IDiskClient
 
 public abstract record LoaderEvent;
 public sealed record StatusChanged(string Text) : LoaderEvent;
+public sealed record RetryWaiting(DateTimeOffset Until, int FailedAttempt) : LoaderEvent;
+public sealed record CurrentDownloadChanged(bool Active) : LoaderEvent;
 public sealed record DestinationSelected(string Path) : LoaderEvent;
 public sealed record InventoryFound(int Files, long Bytes) : LoaderEvent;
 public sealed record FileDiscovered(string RemotePath, string Name, long Size) : LoaderEvent;

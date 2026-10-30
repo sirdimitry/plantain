@@ -20,6 +20,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly List<FileFailure> reportedFailures = [];
     private readonly ConcurrentQueue<LoaderEvent> pendingEvents = new();
     private bool batching;
+    private bool currentDownload;
+    private RetryWaiting? retry;
     private readonly Stopwatch networkTime = new();
     private readonly DispatcherTimer timer;
     private CancellationTokenSource? cancellation;
@@ -37,7 +39,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         session = new DownloadSession(runner);
         destination = this.services.DefaultDestination;
         timer = new DispatcherTimer(TimeSpan.FromMilliseconds(100), DispatcherPriority.Background,
-            (_, _) => { DrainEvents(1000); Changed(nameof(SpeedText), nameof(EtaText)); }, dispatcher);
+            (_, _) => { DrainEvents(1000); Changed(nameof(SpeedText), nameof(EtaText), nameof(Status)); }, dispatcher);
         timer.Stop();
     }
 
@@ -53,7 +55,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool CanStart => !running && session.CanStart && destination.Length > 0;
     public string StartText => session.ButtonText;
     public string StopText => stopping ? "Останавливаю…" : "Остановить";
-    public string Status => status;
+    public bool CanSkip => running && !stopping && currentDownload;
+    public string Status => retry is not null && !stopping
+        ? $"Попытка {retry.FailedAttempt} из 5 · повтор через {Math.Max(0, Math.Ceiling((retry.Until - DateTimeOffset.UtcNow).TotalSeconds)):0} с"
+        : status;
+    public void SkipCurrent() { if (CanSkip) { session.SkipCurrent(); currentDownload = false; retry = null; status = "Пропускаю файл…"; Refresh(); } }
     public string Error => error;
     public bool HasError => error.Length > 0;
     public bool HasIssues => Failures.Count > 0;
@@ -70,7 +76,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string RemainingText => Math.Max(0, count - done).ToString(CultureInfo.CurrentCulture);
     public string ErrorCountText => errors.ToString(CultureInfo.CurrentCulture);
     private double Speed => networkTime.Elapsed.TotalSeconds > 0 ? networkBytes / networkTime.Elapsed.TotalSeconds : 0;
-    public string SpeedText => Speed > 0 && running ? Bytes((long)Speed) + "/с" : "—";
+    public string SpeedText => Speed > 0 && running ? Megabits(Speed) : "—";
     public string EtaText => Speed > 0 && running ? Duration(Math.Max(0, total - completed - (verifying ? 0 : current)) / Speed) : "—";
     public string FolderToOpen => resultFolder ?? destination;
 
@@ -132,7 +138,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             {
                 timer.Stop(); networkTime.Stop();
                 cancellation.Dispose(); cancellation = null;
-                running = false; stopping = false; errors = Failures.Count;
+                running = false; stopping = false; currentDownload = false; retry = null; errors = Failures.Count;
                 Refresh();
             }
         }
@@ -168,7 +174,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         switch (value)
         {
-            case StatusChanged e: if (!stopping) status = e.Text; break;
+            case StatusChanged e: retry = null; if (!stopping) status = e.Text; break;
+            case RetryWaiting e: retry = e; break;
+            case CurrentDownloadChanged e: currentDownload = e.Active; retry = null; break;
             case DestinationSelected e: resultFolder = e.Path; break;
             case FileDiscovered e: discovered[e.RemotePath] = e; break;
             case FileCompleted e: completedFiles.Add(e.RemotePath); break;
@@ -222,10 +230,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void Changed(params string[] names) { foreach (var name in names) PropertyChanged?.Invoke(this, new(name)); }
     internal static string Bytes(long bytes)
     {
-        var units = new[] { "Б", "КиБ", "МиБ", "ГиБ", "ТиБ" }; var value = (double)Math.Max(0, bytes); var index = 0;
-        while (value >= 1024 && index < units.Length - 1) { value /= 1024; index++; }
+        var units = new[] { "Б", "КБ", "МБ", "ГБ", "ТБ" }; var value = (double)Math.Max(0, bytes); var index = 0;
+        while (value >= 1000 && index < units.Length - 1) { value /= 1000; index++; }
         return value.ToString(index == 0 ? "0" : "0.0", CultureInfo.GetCultureInfo("ru-RU")) + " " + units[index];
     }
+    internal static string Megabits(double bytesPerSecond) => (bytesPerSecond * 8 / 1_000_000).ToString("0.0", CultureInfo.GetCultureInfo("ru-RU")) + " Мбит/с";
     internal static string Duration(double seconds) => seconds >= 3600 ? $"{(int)(seconds / 3600)} ч {(int)(seconds % 3600 / 60)} мин" :
         seconds >= 60 ? $"{(int)(seconds / 60)} мин {(int)(seconds % 60)} с" : $"{Math.Max(0, (int)seconds)} с";
 }

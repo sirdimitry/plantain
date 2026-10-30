@@ -16,9 +16,9 @@ $packageRoot = Join-Path $windowsRoot "artifacts/packages/$revision"
 New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 Push-Location $windowsRoot
 try {
-    & $Dotnet publish src/Plantain.Windows -c Release -r win-x64 --self-contained true "-p:SourceRevisionId=$revision" -p:PublishSingleFile=false -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o $folder
+    & $Dotnet publish src/Plantain.Windows -c Release -r win-x64 --self-contained true "-p:SourceRevisionId=$revision" -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=false -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o $folder
     if ($LASTEXITCODE -ne 0) { throw 'Portable publish failed' }
-    foreach ($required in @('Plantain.Windows.exe', 'coreclr.dll', 'hostfxr.dll', 'PresentationFramework.dll')) {
+    foreach ($required in @('Plantain.Windows.exe')) {
         if (!(Test-Path -LiteralPath (Join-Path $folder $required))) { throw "Missing portable component: $required" }
     }
     Copy-Item -LiteralPath (Join-Path $windowsRoot 'docs/PORTABLE.ru.txt') -Destination (Join-Path $folder 'Прочитайте меня.txt')

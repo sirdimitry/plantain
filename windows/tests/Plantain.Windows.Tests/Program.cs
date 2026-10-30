@@ -211,9 +211,43 @@ internal static class Program
             model.Receive(new InventoryFound(1, 6)); model.Receive(new FileStarted("test", 6, true)); model.Receive(new TransferProgress(3, 0));
             Check(model.TotalFraction == 0 && model.FileFraction == 0.5 && model.SpeedText == "—"); return Task.CompletedTask;
         });
+        await Case("retry countdown updates and clears on next attempt", async () =>
+        {
+            var model = Model(Successful(), out _);
+            model.Receive(new RetryWaiting(DateTimeOffset.UtcNow.AddSeconds(2), 4));
+            Check(model.Status.Contains("4 из 5") && model.Status.Contains("2 с"));
+            await Task.Delay(1100);
+            Check(model.Status.Contains("1 с"));
+            model.Receive(new StatusChanged("Получаю ссылку · попытка 5 из 5"));
+            Check(!model.Status.Contains("повтор через"));
+        });
+        await Case("skip button cancels current file action and remains visible beside retry", async () =>
+        {
+            var finish = new TaskCompletionSource<DownloadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var skips = 0;
+            var runner = new TestRunner((report, token) =>
+            {
+                report?.Invoke(new CurrentDownloadChanged(true));
+                report?.Invoke(new FileStarted("movie.mp4", 1000000, false));
+                report?.Invoke(new RetryWaiting(DateTimeOffset.UtcNow.AddSeconds(16), 4));
+                return finish.Task;
+            }, () => { skips++; finish.TrySetResult(Success); });
+            var model = Model(runner, out var services);
+            var window = new MainWindow(model, services); window.Show();
+            try
+            {
+                var run = model.StartAsync(); await Until(() => model.CanSkip); await Flush();
+                var button = (Button)window.FindName("SkipButton");
+                Check(button.IsVisible && button.IsEnabled && button.ActualWidth > 0);
+                Save(window, "retry-skip.png", 1);
+                button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await run; Check(skips == 1 && !model.CanSkip);
+            }
+            finally { finish.TrySetResult(Success); window.Close(); }
+        });
         await Case("byte and ETA formatting", () =>
         {
-            Check(MainViewModel.Bytes(1024) == "1,0 КиБ" && MainViewModel.Duration(3660) == "1 ч 1 мин"); return Task.CompletedTask;
+            Check(MainViewModel.Bytes(1_000_000) == "1,0 МБ" && MainViewModel.Bytes(1_000_000_000) == "1,0 ГБ" && MainViewModel.Megabits(1_000_000) == "8,0 Мбит/с" && MainViewModel.Duration(3660) == "1 ч 1 мин"); return Task.CompletedTask;
         });
         await Case("system Downloads lookup and best-effort own dialog cleanup", () =>
         {
@@ -349,8 +383,9 @@ internal sealed class FakeServices(string destination) : IWindowsServices
     public IDisposable KeepAwake() => new Releaser(() => Released++);
     private sealed class Releaser(Action release) : IDisposable { public void Dispose() => release(); }
 }
-internal sealed class TestRunner(Func<Action<LoaderEvent>?, CancellationToken, Task<DownloadResult>> run) : IDownloadRunner
+internal sealed class TestRunner(Func<Action<LoaderEvent>?, CancellationToken, Task<DownloadResult>> run, Action? skip = null) : IDownloadRunner
 {
+    public void SkipCurrent() => skip?.Invoke();
     public Task<DownloadResult> RunAsync(string link, string destination, Action<LoaderEvent>? report, CancellationToken token) => run(report, token);
 }
 internal sealed class PreviewRunner : IDownloadRunner

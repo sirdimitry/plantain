@@ -2,18 +2,21 @@ namespace Plantain.Core;
 
 public interface IDownloadRunner
 {
+    void SkipCurrent() { }
     Task<DownloadResult> RunAsync(string publicLink, string destination, Action<LoaderEvent>? report,
         CancellationToken cancellationToken);
 }
 
 public sealed class DiskDownloadRunner : IDownloadRunner
 {
+    private readonly DownloadControl control = new();
+    public void SkipCurrent() => control.SkipCurrent();
     public async Task<DownloadResult> RunAsync(string publicLink, string destination, Action<LoaderEvent>? report,
         CancellationToken cancellationToken)
     {
         using var api = new DiskApi(publicLink);
         using var downloader = new FileDownloader();
-        return await new DownloadEngine(api, downloader).RunAsync(destination, report, cancellationToken).ConfigureAwait(false);
+        return await new DownloadEngine(api, downloader, control: control).RunAsync(destination, report, cancellationToken).ConfigureAwait(false);
     }
 }
 
@@ -44,6 +47,8 @@ public sealed class DownloadSession(IDownloadRunner? runner = null)
     public bool CanStart { get { lock (sync) return !running && !string.IsNullOrWhiteSpace(link); } }
     public string ButtonText { get { lock (sync) return canResume ? "Продолжить" : "Скачать"; } }
     public DownloadResult? LastResult { get { lock (sync) return lastResult; } }
+
+    public void SkipCurrent() => runner.SkipCurrent();
 
     public void ResetResult()
     {

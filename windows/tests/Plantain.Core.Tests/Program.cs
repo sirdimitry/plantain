@@ -295,13 +295,34 @@ internal static partial class Suite
             var result = await new DownloadEngine(disk, downloader, new FastDelay()).RunAsync(folder);
             Check(result.Succeeded && disk.Calls == 2);
         });
-        yield return new("B15 maximum twenty file attempts", async () =>
+        yield return new("skip current file preserves partial and continues next file", async () =>
+        {
+            var folder = Dir(scratch); var control = new DownloadControl();
+            await using var server = new TestServer(Ranged); using var downloader = new FileDownloader(Http());
+            var disk = new FakeDisk(new("Folder", "dir"), [Item() with { Name = "a.mp4" }, Item() with { Name = "b.mp4" }], _ => Task.FromResult(server.BaseUri));
+            var result = await new DownloadEngine(disk, downloader, new FastDelay(), control: control).RunAsync(folder, e =>
+            { if (e is FileStarted { Name: "/a.mp4", Verifying: false }) control.SkipCurrent(); });
+            Check(result.Done == 1 && result.Failures.Single().Name == "/a.mp4");
+            Check(!File.Exists(Path.Combine(folder, "Folder copy", "a.mp4")) && File.Exists(Path.Combine(folder, "Folder copy", "b.mp4")));
+            control.SkipCurrent(); // safe after the run; never cancels a future file
+        });
+        yield return new("download URL retries report countdown and can be skipped during waiting", async () =>
+        {
+            var control = new DownloadControl(); var events = new List<LoaderEvent>();
+            var disk = new FakeDisk(Item(), [], _ => throw new RetryableApiException("API 503"));
+            using var downloader = new FileDownloader();
+            var result = await new DownloadEngine(disk, downloader, control: control).RunAsync(Dir(scratch), e =>
+            { events.Add(e); if (e is RetryWaiting) control.SkipCurrent(); });
+            Check(result.Failures.Single().Message.Contains("Пропущено") && disk.Calls == 1);
+            Check(events.OfType<RetryWaiting>().Single().FailedAttempt == 1 && events.OfType<CurrentDownloadChanged>().Last().Active == false);
+        });
+        yield return new("B15 maximum five file attempts", async () =>
         {
             var folder = Dir(scratch); await using var server = new TestServer((_, _) => new([], 503));
             using var downloader = new FileDownloader(Http()); var disk = Disk(Item(), server.BaseUri); var delay = new FastDelay();
             var result = await new DownloadEngine(disk, downloader, delay).RunAsync(folder);
-            Check(!result.Succeeded && result.Failures.Count == 1 && disk.Calls == 20 && delay.Values.Count == 19);
-            Check(delay.Values.Take(5).Select(x => x.TotalSeconds).SequenceEqual([2d, 4d, 8d, 16d, 30d]));
+            Check(!result.Succeeded && result.Failures.Count == 1 && disk.Calls == 5 && delay.Values.Count == 4);
+            Check(delay.Values.Select(x => x.TotalSeconds).SequenceEqual([2d, 4d, 8d, 16d]));
         });
         yield return new("B14 fatal API error not repeated by engine", async () =>
         {

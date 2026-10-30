@@ -51,6 +51,7 @@ public partial class MainWindow : Window
 
     private async void Start(object sender, RoutedEventArgs e) { await Model.StartAsync(); if (Model.Link.Length == 0) LinkBox.Focus(); }
     private void Stop(object sender, RoutedEventArgs e) => Model.Stop();
+    private void SkipCurrent(object sender, RoutedEventArgs e) => Model.SkipCurrent();
     private void ChooseDestination(object sender, RoutedEventArgs e)
     {
         try { if (services.ChooseFolder(this, Model.Destination) is { } folder) Model.SetDestination(folder); }

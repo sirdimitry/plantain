@@ -17,7 +17,7 @@ public sealed class FilePublisher : IFilePublisher
 }
 
 public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, IRetryDelay? retryDelay = null,
-    IFilePublisher? filePublisher = null)
+    IFilePublisher? filePublisher = null, DownloadControl? control = null)
 {
     private readonly IRetryDelay delay = retryDelay ?? new RetryDelay();
     private readonly IFilePublisher publisher = filePublisher ?? new FilePublisher();
@@ -143,16 +143,22 @@ public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, 
         foreach (var work in missing)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            using var currentFile = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            control?.Set(currentFile);
+            report(new CurrentDownloadChanged(true));
             report(new FileStarted(work.Remote, work.Item.Size!.Value, false));
             try
             {
-                await DownloadAsync(work, cache, pins, report, cancellationToken).ConfigureAwait(false);
+                await DownloadAsync(work, cache, pins, report, currentFile.Token).ConfigureAwait(false);
                 done++;
                 completed += work.Item.Size.Value;
                 report(new FileCompleted(work.Remote));
             }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && currentFile.IsCancellationRequested)
+            { Fail(work.Remote, "Пропущено пользователем. Частичная загрузка сохранена."); }
             catch (Exception error) when (error is LoaderException || IsLocal(error))
             { Fail(work.Remote, LocalMessage(error)); }
+            finally { control?.Set(null); report(new CurrentDownloadChanged(false)); }
             report(new TotalsChanged(done, skipped, completed, failures.Count));
         }
         cancellationToken.ThrowIfCancellationRequested();
@@ -179,7 +185,7 @@ public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, 
     {
         var partial = PathSafety.Child(cache, FileVerifier.PartialName(work.Item));
         await using var file = pins.OpenPartial(partial);
-        for (var attempt = 1; attempt <= 20; attempt++)
+        for (var attempt = 1; attempt <= 5; attempt++)
         {
             token.ThrowIfCancellationRequested();
             try
@@ -187,7 +193,7 @@ public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, 
                 if (!work.Item.HasHash || file.Length > work.Item.Size) file.SetLength(0);
                 if (file.Length != work.Item.Size)
                 {
-                    report(new StatusChanged($"Получаю ссылку · попытка {attempt} из 20"));
+                    report(new StatusChanged($"Получаю ссылку · попытка {attempt} из 5"));
                     var url = await api.DownloadUrlAsync(work.Remote, token).ConfigureAwait(false);
                     await downloader.TransferAsync(url, file, work.Item.Size!.Value, report, token).ConfigureAwait(false);
                 }
@@ -202,13 +208,12 @@ public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, 
                 publisher.Publish(file, work.Local);
                 return;
             }
-            catch (NetworkFailureException) when (attempt < 20)
+            catch (Exception error) when (attempt < 5 && error is NetworkFailureException or RetryableApiException)
             {
-                report(new StatusChanged($"Повтор скачивания через {RetryRules.FileDelay(attempt).TotalSeconds:0} с · {attempt}/20"));
-                await delay.WaitAsync(RetryRules.FileDelay(attempt), token).ConfigureAwait(false);
+                var wait = RetryRules.FileDelay(attempt);
+                report(new RetryWaiting(DateTimeOffset.UtcNow + wait, attempt));
+                await delay.WaitAsync(wait, token).ConfigureAwait(false);
             }
-            catch (RetryableApiException) when (attempt < 20)
-            { await delay.WaitAsync(RetryRules.FileDelay(attempt), token).ConfigureAwait(false); }
         }
     }
 }

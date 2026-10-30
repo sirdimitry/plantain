@@ -4,7 +4,10 @@
  Icon="Assets/AppIcon.png" Closing="OnClosing" Activated="OnActivated">
  <DockPanel Margin="28,20,28,22">
   <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0">
-   <TextBlock x:Name="StatusBlock" Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+   <DockPanel LastChildFill="True">
+    <Button x:Name="SkipButton" DockPanel.Dock="Right" Content="Пропустить" Click="SkipCurrent" IsEnabled="{Binding CanSkip}" Visibility="{Binding CanSkip, Converter={StaticResource VisibleWhen}}" Padding="10,4" Margin="10,0,0,0" MinHeight="36" ToolTip="Пропустить текущий файл и перейти к следующему" AutomationProperties.Name="Пропустить текущий файл"/>
+    <TextBlock x:Name="StatusBlock" Text="{Binding Status}" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite"/>
+   </DockPanel>
    <TextBlock Text="{Binding Error}" Foreground="{DynamicResource ErrorBrush}" TextWrapping="Wrap" Margin="0,6,0,0" Visibility="{Binding HasError, Converter={StaticResource VisibleWhen}}"/>
    <Button x:Name="IssuesButton" Click="ShowFailures" Visibility="{Binding HasIssues, Converter={StaticResource VisibleWhen}}" HorizontalAlignment="Left" Margin="0,10,0,0" Padding="8,5,12,5" MinHeight="44" ToolTip="Показать названия и причины (Ctrl+E)" AutomationProperties.Name="Показать список того, что не скачалось">
     <StackPanel Orientation="Horizontal">
