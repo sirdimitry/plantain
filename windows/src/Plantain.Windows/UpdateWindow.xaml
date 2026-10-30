@@ -10,7 +10,7 @@
   <StackPanel Margin="24">
    <TextBlock x:Name="VersionLabel" FontWeight="SemiBold" TextWrapping="Wrap"/>
    <TextBlock Text="Хотите обновиться?" FontSize="18" Margin="0,14,0,8"/>
-   <TextBlock Text="Откроется Windows-релиз на GitHub. Скачайте ZIP и распакуйте новую версию целиком в отдельную папку." TextWrapping="Wrap"/>
+   <TextBlock Text="Откроется Windows-релиз на GitHub. Скачайте установщик Setup.exe и закройте приложение перед установкой обновления. Если используете переносную версию, скачайте ZIP и распакуйте его в отдельную папку." TextWrapping="Wrap"/>
    <Grid Margin="0,22,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
     <Button x:Name="LaterButton" Content="Позже" Click="Later" HorizontalAlignment="Left" IsCancel="True"/>
     <Button x:Name="DownloadUpdateButton" Grid.Column="1" Content="Скачать обновление" Click="Download" Style="{StaticResource Primary}" IsDefault="True"/>

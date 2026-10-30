@@ -12,16 +12,22 @@ $sha = $zip + '.sha256'
 if (!(Test-Path -LiteralPath $zip) -or !(Test-Path -LiteralPath $sha)) { throw 'Run publish.ps1 for this commit first' }
 $expected = ((Get-Content -LiteralPath $sha -Raw).Split(' ')[0]).Trim()
 if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash -ne $expected) { throw 'Archive checksum mismatch' }
+$installerName = "Plantain-$version-win-x64-Setup.exe"
+$installer = Join-Path $windowsRoot "artifacts/packages/$revision/$installerName"
+$installerSha = $installer + '.sha256'
+if (!(Test-Path -LiteralPath $installer) -or !(Test-Path -LiteralPath $installerSha)) { throw 'Run installer.ps1 for this commit first' }
+$installerExpected = ((Get-Content -LiteralPath $installerSha -Raw).Split(' ')[0]).Trim()
+if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne $installerExpected) { throw 'Installer checksum mismatch' }
 $tag = "windows-v$version"
 $notes = Join-Path $windowsRoot "artifacts/packages/$revision/release-notes.md"
-$body = "Подорожник для Windows $version.`n`nАвтономная сборка Windows x64: распакуйте ZIP целиком и запустите Plantain.Windows.exe. .NET отдельно не требуется. SHA-256 находится рядом.`n`nЕсть версия для macOS: https://github.com/sirdimitry/plantain/blob/main/README.md`n`nИзменения и ограничения: https://github.com/sirdimitry/plantain/blob/windows/windows/CHANGELOG.md`n"
+$body = "Подорожник для Windows $version.`n`nУстановщик Windows 10/11 x64: скачайте Setup.exe, установите и открывайте Подорожник ярлыком в меню «Пуск». .NET включена, установка без интернета и обязательных прав администратора. ZIP — переносной вариант без установки. SHA-256 находится рядом с каждым файлом.`n`nЕсть версия для macOS: https://github.com/sirdimitry/plantain/blob/main/README.md`n`nИзменения и ограничения: https://github.com/sirdimitry/plantain/blob/windows/windows/CHANGELOG.md`n"
 [IO.File]::WriteAllText($notes, $body, [Text.UTF8Encoding]::new($false))
 if (!$Publish) {
-    Write-Output "Ready: $tag; ZIP + SHA256. To publish explicitly, run release.ps1 -Publish."
+    Write-Output "Ready: $tag; Setup.exe + ZIP + SHA256. To publish explicitly, run release.ps1 -Publish."
     exit 0
 }
 $fullRevision = git -C $repoRoot rev-parse HEAD
-$arguments = @('release','create',$tag,'--repo','sirdimitry/plantain','--target',$fullRevision,'--latest=false','--title',"Подорожник $version — Windows",'--notes-file',$notes,$zip,$sha)
+$arguments = @('release','create',$tag,'--repo','sirdimitry/plantain','--target',$fullRevision,'--latest=false','--title',"Подорожник $version — Windows",'--notes-file',$notes,$installer,$installerSha,$zip,$sha)
 if ($version.Contains('-')) { $arguments += '--prerelease' }
 & gh @arguments
 if ($LASTEXITCODE -ne 0) { throw 'GitHub release publication failed' }
