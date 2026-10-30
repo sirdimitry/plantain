@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Automation.Peers;
 using System.Windows.Input;
+using System.Reflection;
+using Plantain.Core;
 
 namespace Plantain.Windows;
 
@@ -11,12 +13,19 @@ public partial class MainWindow : Window
     private bool closing;
     private FailuresWindow? failureList;
     private string announcedStatus = "";
+    private readonly IUpdateChecker? updateChecker;
+    private readonly string installedVersion;
+    private readonly CancellationTokenSource updateCancellation = new();
+    private WindowsUpdate? pendingUpdate;
+    private bool updateChecked, windowClosed;
     public MainViewModel Model { get; }
     public MainWindow() : this(new WindowsServices()) { }
-    private MainWindow(IWindowsServices services) : this(new MainViewModel(services: services), services) { }
-    public MainWindow(MainViewModel model, IWindowsServices services)
+    private MainWindow(IWindowsServices services) : this(new MainViewModel(services: services), services, new GitHubWindowsUpdates()) { }
+    public MainWindow(MainViewModel model, IWindowsServices services, IUpdateChecker? updateChecker = null, string? installedVersion = null)
     {
         this.services = services; Model = model;
+        this.updateChecker = updateChecker;
+        this.installedVersion = installedVersion ?? typeof(MainWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion.Split('+')[0];
         InitializeComponent(); DataContext = model;
         MinHeight = Math.Min(MinHeight, SystemParameters.WorkArea.Height);
         MinWidth = Math.Min(MinWidth, SystemParameters.WorkArea.Width);
@@ -24,9 +33,10 @@ public partial class MainWindow : Window
         MaxHeight = SystemParameters.WorkArea.Height;
         Height = Math.Min(Height, MaxHeight);
         Loaded += (_, _) => LinkBox.Focus();
+        ContentRendered += CheckUpdatesOnStartup;
         Model.PropertyChanged += ModelChanged;
         Microsoft.Win32.SystemEvents.UserPreferenceChanged += PreferenceChanged;
-        Closed += (_, _) => { Model.PropertyChanged -= ModelChanged; Microsoft.Win32.SystemEvents.UserPreferenceChanged -= PreferenceChanged; };
+        Closed += (_, _) => { windowClosed = true; updateCancellation.Cancel(); updateCancellation.Dispose(); Model.PropertyChanged -= ModelChanged; Microsoft.Win32.SystemEvents.UserPreferenceChanged -= PreferenceChanged; };
         AddShortcut(Key.O, ModifierKeys.Control, () => OpenFolder(this, new()));
         AddShortcut(Key.E, ModifierKeys.Control, () => ShowFailures(this, new()));
         AddShortcut(Key.Escape, ModifierKeys.None, Model.Stop);
@@ -77,15 +87,42 @@ public partial class MainWindow : Window
         closing = true;
         Close();
     }
-    private void OnActivated(object? sender, EventArgs e) => ThemeManager.Apply(Application.Current.Resources);
+    private void OnActivated(object? sender, EventArgs e)
+    {
+        ThemeManager.Apply(Application.Current.Resources);
+        _ = Dispatcher.InvokeAsync(ShowPendingUpdate, System.Windows.Threading.DispatcherPriority.ContextIdle);
+    }
     private void PreferenceChanged(object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
         => _ = Dispatcher.InvokeAsync(() => ThemeManager.Apply(Application.Current.Resources));
     private void ModelChanged(object? sender, PropertyChangedEventArgs e)
     {
+        ShowPendingUpdate();
         if (!Model.IsRunning && Model.Status != announcedStatus)
         {
             announcedStatus = Model.Status;
             UIElementAutomationPeer.FromElement(StatusBlock)?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
         }
+    }
+
+    private async void CheckUpdatesOnStartup(object? sender, EventArgs e)
+    {
+        if (updateChecked || updateChecker is null) return;
+        updateChecked = true;
+        try
+        {
+            var result = await updateChecker.CheckAsync(installedVersion, updateCancellation.Token);
+            if (!windowClosed && result.Status == UpdateCheckStatus.Available)
+            { pendingUpdate = result.Update; ShowPendingUpdate(); }
+        }
+        catch (OperationCanceledException) { }
+        catch { /* A failed update check must not prevent downloads or show startup errors. */ }
+    }
+
+    private void ShowPendingUpdate()
+    {
+        if (pendingUpdate is null || windowClosed || !IsLoaded || !IsActive || !IsEnabled || Model.IsRunning || OwnedWindows.Count > 0) return;
+        var update = pendingUpdate;
+        pendingUpdate = null;
+        new UpdateWindow(installedVersion, update) { Owner = this }.Show();
     }
 }

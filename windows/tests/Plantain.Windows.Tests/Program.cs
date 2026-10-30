@@ -224,6 +224,59 @@ internal static class Program
         {
             using var awake = new WindowsServices().KeepAwake(); return Task.CompletedTask;
         });
+        await Case("startup shows one blue update prompt and Later dismisses it", async () =>
+        {
+            var model = Model(Successful(), out var services);
+            var checker = new FakeUpdates(new(UpdateCheckStatus.Available, new("0.1.0-dev.7", new Uri("https://github.com/sirdimitry/plantain/releases/tag/windows-v0.1.0-dev.7"))));
+            var window = new MainWindow(model, services, checker, "0.1.0-dev.6"); window.Show(); window.Activate();
+            try
+            {
+                await Until(() => window.OwnedWindows.OfType<UpdateWindow>().Any());
+                var popup = window.OwnedWindows.OfType<UpdateWindow>().Single();
+                Check(((TextBlock)popup.FindName("VersionLabel")).Text.Contains("0.1.0-dev.7"));
+                Save(popup, "update-notification.png", 1);
+                ((Button)popup.FindName("LaterButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                window.Activate(); await Flush(); Check(checker.Calls == 1 && !window.OwnedWindows.OfType<UpdateWindow>().Any());
+            }
+            finally { window.Close(); }
+        });
+        await Case("unavailable update service stays quiet and download form works", async () =>
+        {
+            var model = Model(Successful(), out var services); var checker = new FakeUpdates(new(UpdateCheckStatus.Unavailable));
+            var window = new MainWindow(model, services, checker, "0.1.0-dev.6"); window.Show(); window.Activate();
+            try { await Until(() => checker.Calls == 1); await Flush(); Check(model.CanStart && !window.OwnedWindows.OfType<UpdateWindow>().Any()); }
+            finally { window.Close(); }
+        });
+        await Case("update button opens exact Windows release after consent", async () =>
+        {
+            Uri? opened = null; var release = new Uri("https://github.com/sirdimitry/plantain/releases/tag/windows-v0.1.0-dev.7");
+            var popup = new UpdateWindow("0.1.0-dev.6", new("0.1.0-dev.7", release), uri => opened = uri);
+            popup.Show(); await Flush(); Check(opened is null);
+            ((Button)popup.FindName("DownloadUpdateButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(opened == release && !popup.IsVisible);
+        });
+        await Case("closing main cancels pending startup update check", async () =>
+        {
+            var model = Model(Successful(), out var services); var checker = new CancellableUpdates();
+            var window = new MainWindow(model, services, checker, "0.1.0-dev.6"); window.Show();
+            await Until(() => checker.Started); window.Close(); await Until(() => checker.Cancelled);
+            Check(!app.Windows.OfType<UpdateWindow>().Any());
+        });
+        await Case("new update notification waits until active download finishes", async () =>
+        {
+            var finish = new TaskCompletionSource<DownloadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var model = Model(new TestRunner((_, _) => finish.Task), out var services); var checker = new PendingUpdates();
+            var window = new MainWindow(model, services, checker, "0.1.0-dev.6"); window.Show(); window.Activate();
+            try
+            {
+                await Until(() => checker.Calls == 1); var run = model.StartAsync();
+                checker.Result.SetResult(new(UpdateCheckStatus.Available, new("0.1.0-dev.7", new Uri("https://github.com/sirdimitry/plantain/releases/tag/windows-v0.1.0-dev.7"))));
+                await Task.Delay(50); await Flush(); Check(!window.OwnedWindows.OfType<UpdateWindow>().Any());
+                finish.SetResult(Success); await run; await Until(() => window.OwnedWindows.OfType<UpdateWindow>().Any());
+                window.OwnedWindows.OfType<UpdateWindow>().Single().Close();
+            }
+            finally { finish.TrySetResult(Success); window.Close(); }
+        });
         foreach (var dark in new[] { false, true })
             await Case((dark ? "dark" : "light") + " theme renders main and error windows at 100 and 200 percent", async () =>
             {
@@ -258,6 +311,33 @@ internal static class Program
         bitmap.Render(window); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var file = File.Create(Path.Combine(artifacts, name)); encoder.Save(file);
     }
+    private static async Task Until(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (!condition()) { if (DateTime.UtcNow >= deadline) throw new Exception("UI state timed out"); await Task.Delay(20); }
+    }
+}
+
+internal sealed class FakeUpdates(UpdateCheckResult result) : IUpdateChecker
+{
+    internal int Calls;
+    public Task<UpdateCheckResult> CheckAsync(string currentVersion, CancellationToken token) { Calls++; return Task.FromResult(result); }
+}
+internal sealed class CancellableUpdates : IUpdateChecker
+{
+    internal bool Started, Cancelled;
+    public async Task<UpdateCheckResult> CheckAsync(string currentVersion, CancellationToken token)
+    {
+        Started = true;
+        try { await Task.Delay(Timeout.Infinite, token); return new(UpdateCheckStatus.NoUpdate); }
+        finally { Cancelled = token.IsCancellationRequested; }
+    }
+}
+internal sealed class PendingUpdates : IUpdateChecker
+{
+    internal int Calls;
+    internal TaskCompletionSource<UpdateCheckResult> Result = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public Task<UpdateCheckResult> CheckAsync(string currentVersion, CancellationToken token) { Calls++; return Result.Task; }
 }
 
 internal sealed class FakeServices(string destination) : IWindowsServices

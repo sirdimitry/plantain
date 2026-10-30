@@ -1,0 +1,20 @@
+<Window x:Class="Plantain.Windows.UpdateWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="Доступно обновление" Style="{StaticResource {x:Type Window}}" Width="480" SizeToContent="Height" ResizeMode="NoResize"
+ ShowInTaskbar="False" ShowActivated="False" WindowStartupLocation="CenterOwner" Icon="Assets/AppIcon.png">
+ <StackPanel>
+  <Border Background="#075CCC" Padding="24,20">
+   <StackPanel><TextBlock Text="Вышла новая версия" FontSize="24" FontWeight="SemiBold" Foreground="White"/>
+    <TextBlock Text="Подорожник для Windows" Foreground="White" Margin="0,6,0,0"/></StackPanel>
+  </Border>
+  <StackPanel Margin="24">
+   <TextBlock x:Name="VersionLabel" FontWeight="SemiBold" TextWrapping="Wrap"/>
+   <TextBlock Text="Хотите обновиться?" FontSize="18" Margin="0,14,0,8"/>
+   <TextBlock Text="Откроется Windows-релиз на GitHub. Скачайте ZIP и распакуйте новую версию целиком в отдельную папку." TextWrapping="Wrap"/>
+   <Grid Margin="0,22,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <Button x:Name="LaterButton" Content="Позже" Click="Later" HorizontalAlignment="Left" IsCancel="True"/>
+    <Button x:Name="DownloadUpdateButton" Grid.Column="1" Content="Скачать обновление" Click="Download" Style="{StaticResource Primary}" IsDefault="True"/>
+   </Grid>
+  </StackPanel>
+ </StackPanel>
+</Window>

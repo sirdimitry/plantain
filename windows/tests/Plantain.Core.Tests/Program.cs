@@ -6,6 +6,13 @@ using System.Text.Json;
 using Plantain.Core;
 using Plantain.Core.Tests;
 
+if (args is ["--check-updates", var installed])
+{
+    var check = await new GitHubWindowsUpdates().CheckAsync(installed, default);
+    Console.WriteLine(JsonSerializer.Serialize(check));
+    return check.Status == UpdateCheckStatus.Unavailable ? 1 : 0;
+}
+
 if (args is ["--hold-destination", var heldDestination, var readyFile])
 {
     using var pins = new DirectoryPins();
@@ -26,7 +33,7 @@ var scratch = Path.Combine(Path.GetDirectoryName(reportPath)!, "scratch-" + Guid
 Directory.CreateDirectory(scratch);
 var results = new List<object>();
 var failed = 0;
-var tests = Suite.Cases(scratch).Concat(Suite.Stage3Cases(scratch)).Concat(Suite.SessionCases()).ToArray();
+var tests = Suite.Cases(scratch).Concat(Suite.Stage3Cases(scratch)).Concat(Suite.SessionCases()).Concat(Suite.UpdateCases()).ToArray();
 try
 {
     foreach (var test in tests)
