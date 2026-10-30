@@ -34,7 +34,7 @@
 .\windows\scripts\release.ps1 -Publish
 ```
 
-Скрипт создаёт релиз с префиксом windows-v, ZIP и SHA-256. Предварительная версия помечается prerelease. `--latest=false` сохраняет существующий общий latest для macOS. Для команды нужны авторизованный GitHub CLI и уже отправленный коммит. На этапе 6 публичный Windows-релиз не создавался; сейчас в GitHub есть только macOS-релизы, поэтому обычное окно обновления пока не появляется.
+Скрипт создаёт релиз с префиксом windows-v, ZIP и SHA-256. Предварительная версия помечается prerelease. `--latest=false` сохраняет существующий общий latest для macOS. Для команды нужны авторизованный GitHub CLI и уже отправленный коммит. На этапе 7 опубликован Windows-релиз 0.1.0-dev.6 с ZIP и SHA-256. Проверка для предыдущей версии вернула Available, для текущей — NoUpdate. Общий latest macOS v1.1.1 сохранён. Релиз: https://github.com/sirdimitry/plantain/releases/tag/windows-v0.1.0-dev.6
 
 ## Приватность и границы
 
