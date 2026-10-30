@@ -16,10 +16,19 @@ public static class FileVerifier
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (new FileInfo(path).Length != item.Size) return false;
+        using var pins = new DirectoryPins();
+        await using var file = pins.OpenRead(path);
+        return await VerifyAsync(file, item, progress, cancellationToken).ConfigureAwait(false);
+    }
+
+    public static async Task<bool> VerifyAsync(FileStream file, RemoteItem item, Action<long>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (file.Length != item.Size) return false;
         if (!item.HasHash) return true;
         using var hash = IncrementalHash.CreateHash(item.Sha256 is not null ? HashAlgorithmName.SHA256 : HashAlgorithmName.MD5);
-        await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        file.Position = 0;
         var buffer = new byte[1024 * 1024];
         long bytes = 0;
         var last = Environment.TickCount64;

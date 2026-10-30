@@ -6,12 +6,27 @@ using System.Text.Json;
 using Plantain.Core;
 using Plantain.Core.Tests;
 
+if (args is ["--hold-destination", var heldDestination, var readyFile])
+{
+    using var pins = new DirectoryPins();
+    pins.Pin(heldDestination, create: true);
+    var cache = Path.Combine(heldDestination, ".diskloader-partials");
+    pins.Pin(cache, create: true, exclusiveCache: true);
+    await using var partial = pins.OpenPartial(Path.Combine(cache, FileVerifier.PartialName(new("movie.mp4", "file", 6,
+        Sha256: Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes("abcdef")))))));
+    await partial.WriteAsync(Encoding.UTF8.GetBytes("abc"));
+    await partial.FlushAsync();
+    File.WriteAllText(readyFile, "ready");
+    await Task.Delay(Timeout.Infinite);
+    return 0;
+}
+
 var reportPath = args.Length > 0 ? Path.GetFullPath(args[0]) : Path.GetFullPath("artifacts/test-results.json");
 var scratch = Path.Combine(Path.GetDirectoryName(reportPath)!, "scratch-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(scratch);
 var results = new List<object>();
 var failed = 0;
-var tests = Suite.Cases(scratch).ToArray();
+var tests = Suite.Cases(scratch).Concat(Suite.Stage3Cases(scratch)).Concat(Suite.SessionCases()).ToArray();
 try
 {
     foreach (var test in tests)
@@ -65,12 +80,12 @@ internal sealed class FakeDisk(RemoteItem root, IReadOnlyList<RemoteItem>? child
 }
 internal sealed class RacePublisher : IFilePublisher
 {
-    public void Publish(string partial, string destination) { File.WriteAllText(destination, "keep"); new FilePublisher().Publish(partial, destination); }
+    public void Publish(FileStream partial, string destination) { File.WriteAllText(destination, "keep"); new FilePublisher().Publish(partial, destination); }
 }
 internal sealed class ThrowingDownloader : IFileDownloader
 {
     internal int Calls;
-    public Task TransferAsync(Uri uri, string partial, long size, Action<LoaderEvent> report, CancellationToken token)
+    public Task TransferAsync(Uri uri, FileStream partial, long size, Action<LoaderEvent> report, CancellationToken token)
     { Calls++; throw new LocalFileException("Файл заблокирован."); }
 }
 internal sealed class MockHandler(Func<HttpRequestMessage, HttpResponseMessage> send) : HttpMessageHandler
@@ -78,7 +93,7 @@ internal sealed class MockHandler(Func<HttpRequestMessage, HttpResponseMessage> 
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token) => Task.FromResult(send(request));
 }
 
-internal static class Suite
+internal static partial class Suite
 {
     private static readonly byte[] Data = Encoding.UTF8.GetBytes("abcdef");
     private static readonly NetworkTimeouts NormalTimeouts = new(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10));
@@ -167,13 +182,13 @@ internal static class Suite
         yield return new("B09 overlong transfer rejected", () => TransferCase(scratch, (_, _) => new(Encoding.UTF8.GetBytes("abcdefg")), null, false));
         yield return new("B09 compressed transfer rejected", () => TransferCase(scratch,
             (_, _) => new(Data, Headers: new Dictionary<string, string> { ["Content-Encoding"] = "gzip" }), null, false));
-        yield return new("B08 HTTP416 drops stale partial", async () =>
+        yield return new("B08 HTTP416 resets stale partial", async () =>
         {
             var path = Path.Combine(Dir(scratch), "file.part"); File.WriteAllBytes(path, Data[..3]);
             await using var server = new TestServer((_, _) => new([], 416));
             using var downloader = new FileDownloader(Http());
             await Throws<NetworkFailureException>(() => downloader.TransferAsync(server.BaseUri, path, 6, _ => { }));
-            Check(!File.Exists(path));
+            Check(new FileInfo(path).Length == 0);
         });
         yield return new("B01 nested and empty folders; root copy only", async () =>
         {
@@ -193,7 +208,7 @@ internal static class Suite
         {
             var folder = Dir(scratch); await using var server = new TestServer(Ranged); using var downloader = new FileDownloader(Http());
             var result = await new DownloadEngine(Disk(Item(), server.BaseUri), downloader, new FastDelay()).RunAsync(folder);
-            Check(result.Succeeded && File.Exists(Path.Combine(folder, "movie.mp4")));
+            Check(result.Succeeded && File.Exists(Path.Combine(folder, "movie.mp4")), JsonSerializer.Serialize(result));
             Check(!File.Exists(Path.Combine(folder, "movie.mp4 copy")));
         });
         yield return new("B03 inventory credited before first download; restart skips", async () =>
@@ -489,8 +504,10 @@ internal static class Suite
         yield return new("W03 ambiguous case rejected before writes", async () =>
         {
             var folder = Dir(scratch); var disk = new FakeDisk(new("Folder", "dir"), [Item("A"), Item("a")], _ => throw new Exception("Unexpected network"));
-            using var downloader = new FileDownloader(); await Throws<LocalFileException>(() => new DownloadEngine(disk, downloader).RunAsync(folder));
-            Check(!Directory.EnumerateFileSystemEntries(folder).Any());
+            using var downloader = new FileDownloader();
+            var result = await new DownloadEngine(disk, downloader).RunAsync(folder);
+            Check(!result.Succeeded && result.Failures.Count == 2 && result.Done == 0 && disk.Calls == 0);
+            Check(!Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories).Any());
         });
         yield return new("B01 unknown type or invalid file size rejected", async () =>
         {

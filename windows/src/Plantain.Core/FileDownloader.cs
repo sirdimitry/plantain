@@ -2,7 +2,7 @@ namespace Plantain.Core;
 
 public interface IFileDownloader
 {
-    Task TransferAsync(Uri uri, string partial, long expectedSize, Action<LoaderEvent> report,
+    Task TransferAsync(Uri uri, FileStream partial, long expectedSize, Action<LoaderEvent> report,
         CancellationToken cancellationToken);
 }
 
@@ -15,13 +15,22 @@ public sealed class FileDownloader : IFileDownloader, IDisposable
     public async Task TransferAsync(Uri uri, string partial, long expectedSize, Action<LoaderEvent> report,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var pins = new DirectoryPins();
+        await using var file = pins.OpenPartial(partial);
+        await TransferAsync(uri, file, expectedSize, report, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task TransferAsync(Uri uri, FileStream file, long expectedSize, Action<LoaderEvent> report,
+        CancellationToken cancellationToken = default)
+    {
         if (expectedSize < 0) throw new FatalApiException("Некорректный размер файла.");
         cancellationToken.ThrowIfCancellationRequested();
         using var total = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         total.CancelAfter(http.Timeouts.Total);
         try
         {
-            var offset = PathSafety.Exists(partial) ? new FileInfo(partial).Length : 0;
+            var offset = file.Length;
             using var response = await http.GetAsync(uri, offset, total.Token).ConfigureAwait(false);
             var status = (int)response.StatusCode;
             if (status == 200) offset = 0;
@@ -34,14 +43,11 @@ public sealed class FileDownloader : IFileDownloader, IDisposable
             }
             else
             {
-                if (status == 416 && PathSafety.Exists(partial)) File.Delete(partial);
+                if (status == 416) file.SetLength(0);
                 throw new NetworkFailureException($"Сервер скачивания: HTTP {status}.");
             }
             if (response.Content.Headers.ContentEncoding.Any(value => value != "identity"))
                 throw new NetworkFailureException("Сервер вернул сжатые данные вместо исходного файла.");
-            PathSafety.CheckParents(partial);
-            await using var file = new FileStream(partial, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None,
-                64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
             if (offset == 0) file.SetLength(0);
             file.Position = offset;
             report(new TransferProgress(offset, 0));
