@@ -4,7 +4,7 @@
 
 **macOS: 1.1.1 · стабильная версия.** Этот README описывает приложение для macOS.
 
-Также ведётся разработка [версии для Windows](https://github.com/sirdimitry/plantain/blob/windows/windows/README.md) в отдельной ветке [`windows`](https://github.com/sirdimitry/plantain/tree/windows). Подготовлен независимый загрузчик на C# и автоматические тесты; готового Windows-приложения с интерфейсом пока нет. Версии и результаты проверок Windows публикуются в её README отдельно от macOS.
+Также ведётся разработка [версии для Windows](https://github.com/sirdimitry/plantain/blob/windows/windows/README.md) в отдельной ветке [`windows`](https://github.com/sirdimitry/plantain/tree/windows). Подготовлен загрузчик на C# с файловой защитой Windows и автоматическими тестами; готового Windows-приложения с интерфейсом пока нет. Версии и результаты проверок Windows публикуются в её README отдельно от macOS.
 
 **Подорожник — скачает, когда Диск не может.**
 
