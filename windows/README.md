@@ -6,6 +6,8 @@
 
 Скачивает публичные файлы и папки Яндекс Диска с вложениями, проверяет целостность и продолжает незавершённую загрузку. Вход в аккаунт не нужен.
 
+Приложение написано на **C# / .NET** с интерфейсом **WPF**, созданным для настольных приложений Windows. Версия для macOS написана отдельно на **Swift** с использованием **SwiftUI и AppKit** — нативных интерфейсных технологий Apple.
+
 **[Скачать установщик Windows](https://github.com/sirdimitry/plantain/releases/download/windows-v0.1.0-dev.8/Plantain-0.1.0-dev.8-win-x64-Setup.exe)** · [История изменений](CHANGELOG.md)
 
 Есть [стабильная версия для macOS 1.1.1](https://github.com/sirdimitry/plantain/blob/main/README.md): [скачать DMG](https://github.com/sirdimitry/plantain/releases/tag/v1.1.1). Код macOS находится в `main`, Windows — в отдельной ветке `windows` того же репозитория.
