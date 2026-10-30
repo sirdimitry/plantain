@@ -1,0 +1,28 @@
+<Window x:Class="Plantain.Windows.FailuresWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="Что не скачалось" Style="{StaticResource {x:Type Window}}" Width="850" Height="520" MinWidth="580" MinHeight="320" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+ <DockPanel Margin="24">
+  <StackPanel DockPanel.Dock="Top" Margin="0,0,0,18">
+   <TextBlock Text="Что не скачалось" FontSize="24" FontWeight="SemiBold"/>
+   <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+   <TextBlock Text="Имена показаны с расширениями. Для папок, список которых недоступен, указана папка." TextWrapping="Wrap" Style="{StaticResource Muted}" Margin="0,6,0,0"/>
+  </StackPanel>
+  <Button Content="Закрыть" DockPanel.Dock="Bottom" HorizontalAlignment="Right" Margin="0,16,0,0" MinWidth="110" IsCancel="True" IsDefault="True" Click="CloseDialog"/>
+  <DataGrid x:Name="FilesGrid" ItemsSource="{Binding Rows}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+   EnableRowVirtualization="True" EnableColumnVirtualization="True" VirtualizingPanel.VirtualizationMode="Recycling"
+   HeadersVisibility="Column" GridLinesVisibility="Horizontal" Background="{DynamicResource CardBrush}" Foreground="{DynamicResource TextBrush}"
+   BorderBrush="{DynamicResource BorderBrush}" RowBackground="{DynamicResource CardBrush}" HorizontalGridLinesBrush="{DynamicResource BorderBrush}" AutomationProperties.Name="Файлы и папки, которые не скачались">
+   <DataGrid.Resources>
+    <Style x:Key="WrapCell" TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Margin" Value="8,6"/></Style>
+    <Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="{DynamicResource TrackBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextBrush}"/><Setter Property="Padding" Value="10"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+    <Style TargetType="DataGridCell"><Setter Property="Padding" Value="8"/><Setter Property="BorderThickness" Value="0"/></Style>
+    <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style>
+   </DataGrid.Resources>
+   <DataGrid.Columns>
+    <DataGridTextColumn Header="Имя с расширением" Binding="{Binding Name}" Width="2*" ElementStyle="{StaticResource WrapCell}"/>
+    <DataGridTextColumn Header="Путь в загрузке" Binding="{Binding RelativePath}" Width="2*" ElementStyle="{StaticResource WrapCell}"/>
+    <DataGridTextColumn Header="Причина" Binding="{Binding Reason}" Width="3*" ElementStyle="{StaticResource WrapCell}"/>
+   </DataGrid.Columns>
+  </DataGrid>
+ </DockPanel>
+</Window>

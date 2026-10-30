@@ -46,16 +46,24 @@ public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, 
         var sizeOnly = 0;
         long totalBytes = 0;
 
-        void Count(RemoteItem item)
+        void Fail(string name, string message, bool directory = false)
+        {
+            var failure = new FileFailure(name, message, directory);
+            failures.Add(failure);
+            report(new FileFailed(failure));
+        }
+
+        void Count(RemoteItem item, string remote)
         {
             if (item.Type != "file") return;
             knownFiles++;
+            report(new FileDiscovered(remote, item.Name, item.Size!.Value));
             if (!item.HasHash) sizeOnly++;
             try { totalBytes = checked(totalBytes + item.Size!.Value); }
             catch (OverflowException) { throw new FatalApiException("Суммарный размер файлов превышает поддерживаемый предел."); }
         }
 
-        Count(root);
+        Count(root, "/");
         string target;
         try
         {
@@ -65,7 +73,7 @@ public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, 
                 throw new LocalFileException("Имя результата совпадает со служебной папкой.");
             pending.Push(("/", target, root));
         }
-        catch (LocalFileException error) { target = destination; failures.Add(new(root.Name, error.Message)); }
+        catch (LocalFileException error) { target = destination; Fail("/", error.Message, root.Type == "dir"); }
         report(new DestinationSelected(root.Type == "dir" ? target : destination));
         while (pending.TryPop(out var entry))
         {
@@ -80,15 +88,15 @@ public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, 
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 ValidateItem(child);
-                Count(child);
                 var remote = (entry.Remote == "/" ? "" : entry.Remote) + "/" + child.Name;
+                Count(child, remote);
                 if (collisions.Contains(child.Name))
                 {
-                    failures.Add(new(remote, "Имя совпадает с другим объектом без учёта регистра. Оба объекта пропущены."));
+                    Fail(remote, "Имя совпадает с другим объектом без учёта регистра. Оба объекта пропущены.", child.Type == "dir");
                     continue;
                 }
                 try { pending.Push((remote, PathSafety.Child(entry.Local, child.Name), child)); }
-                catch (LocalFileException error) { failures.Add(new(remote, error.Message)); }
+                catch (LocalFileException error) { Fail(remote, error.Message, child.Type == "dir"); }
             }
         }
         files.Sort((a, b) => StringComparer.Ordinal.Compare(a.Remote, b.Remote));
@@ -102,7 +110,7 @@ public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, 
             if (IsBlocked(directory.Local)) continue;
             try { pins.Pin(directory.Local, create: true); }
             catch (Exception error) when (IsLocal(error))
-            { blocked.Add(directory.Local); failures.Add(new(directory.Remote, LocalMessage(error))); }
+            { blocked.Add(directory.Local); Fail(directory.Remote, LocalMessage(error), true); }
         }
         var done = 0;
         var skipped = 0;
@@ -124,11 +132,11 @@ public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, 
                     report(new FileStarted(work.Remote, work.Item.Size!.Value, true));
                     if (await FileVerifier.VerifyAsync(existing, work.Item,
                         value => report(new TransferProgress(value, 0)), cancellationToken).ConfigureAwait(false))
-                    { done++; skipped++; completed += work.Item.Size.Value; }
-                    else failures.Add(new(work.Remote, "Существующий файл отличается от оригинала и сохранён без изменений."));
+                    { done++; skipped++; completed += work.Item.Size.Value; report(new FileCompleted(work.Remote)); }
+                    else Fail(work.Remote, "Существующий файл отличается от оригинала и сохранён без изменений.");
                 }
             }
-            catch (Exception error) when (IsLocal(error)) { failures.Add(new(work.Remote, LocalMessage(error))); }
+            catch (Exception error) when (IsLocal(error)) { Fail(work.Remote, LocalMessage(error)); }
             report(new TotalsChanged(done, skipped, completed, failures.Count));
         }
         report(new StatusChanged($"Уже готово: {skipped}. Скачиваю недостающие файлы…"));
@@ -141,9 +149,10 @@ public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, 
                 await DownloadAsync(work, cache, pins, report, cancellationToken).ConfigureAwait(false);
                 done++;
                 completed += work.Item.Size.Value;
+                report(new FileCompleted(work.Remote));
             }
             catch (Exception error) when (error is LoaderException || IsLocal(error))
-            { failures.Add(new(work.Remote, LocalMessage(error))); }
+            { Fail(work.Remote, LocalMessage(error)); }
             report(new TotalsChanged(done, skipped, completed, failures.Count));
         }
         cancellationToken.ThrowIfCancellationRequested();

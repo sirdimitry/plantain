@@ -1,0 +1,75 @@
+<Window x:Class="Plantain.Windows.MainWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="Подорожник" Style="{StaticResource {x:Type Window}}" Width="660" Height="900" MinWidth="540" MinHeight="560" WindowStartupLocation="CenterScreen"
+ Icon="Assets/AppIcon.png" Closing="OnClosing" Activated="OnActivated">
+ <DockPanel Margin="28,20,28,22">
+  <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0">
+   <TextBlock x:Name="StatusBlock" Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+   <TextBlock Text="{Binding Error}" Foreground="{DynamicResource ErrorBrush}" TextWrapping="Wrap" Margin="0,6,0,0" Visibility="{Binding HasError, Converter={StaticResource VisibleWhen}}"/>
+   <Button x:Name="IssuesButton" Click="ShowFailures" Visibility="{Binding HasIssues, Converter={StaticResource VisibleWhen}}" HorizontalAlignment="Left" Margin="0,10,0,0" Padding="8,5,12,5" MinHeight="44" ToolTip="Показать названия и причины (Ctrl+E)" AutomationProperties.Name="Показать список того, что не скачалось">
+    <StackPanel Orientation="Horizontal">
+     <Border Width="30" Height="30" CornerRadius="15" Background="{DynamicResource ErrorBadgeBrush}" Margin="0,0,10,0"><TextBlock Text="!" Foreground="{DynamicResource ErrorBadgeTextBrush}" FontSize="23" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+     <TextBlock Text="{Binding IssuesText}" VerticalAlignment="Center"/>
+    </StackPanel>
+   </Button>
+  <Grid Margin="0,14,0,0">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <Button x:Name="OpenFolderButton" Content="Открыть папку" Click="OpenFolder" HorizontalAlignment="Left" ToolTip="Открыть папку сохранения (Ctrl+O)"/>
+   <Grid Grid.Column="1">
+    <Button x:Name="StartButton" Content="{Binding StartText}" IsEnabled="{Binding CanStart}" Visibility="{Binding CanEdit, Converter={StaticResource VisibleWhen}}" Click="Start" Style="{StaticResource Primary}" MinWidth="132" IsDefault="True"/>
+    <Button x:Name="StopButton" Content="{Binding StopText}" IsEnabled="{Binding CanStop}" Visibility="{Binding IsRunning, Converter={StaticResource VisibleWhen}}" Click="Stop" MinWidth="132"/>
+   </Grid>
+  </Grid>
+  </StackPanel>
+  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="2,2,8,2" Focusable="False">
+   <StackPanel>
+    <Grid Margin="0,0,0,24">
+     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <Image Source="Assets/AppIcon.png" Width="54" Height="54" Margin="0,0,14,0" AutomationProperties.Name="Подорожник"/>
+     <StackPanel Grid.Column="1" VerticalAlignment="Center">
+      <TextBlock Text="Подорожник" FontSize="26" FontWeight="SemiBold"/>
+      <TextBlock Text="скачает, когда Диск не может" Style="{StaticResource Muted}" Margin="0,3,0,0"/>
+     </StackPanel>
+     <Button Grid.Column="2" Content="О программе" Click="About" Padding="10,6" FontSize="12"/>
+    </Grid>
+    <Label Content="Ссылка Яндекс Диска" Target="{Binding ElementName=LinkBox}" Padding="0,0,0,8" Foreground="{DynamicResource TextBrush}" FontWeight="SemiBold"/>
+    <TextBox x:Name="LinkBox" Text="{Binding Link, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEdit}" AutomationProperties.Name="Публичная ссылка Яндекс Диска" MinHeight="44"/>
+    <TextBlock Text="Публичная ссылка на папку или файл" Style="{StaticResource Muted}" Margin="0,6,0,18"/>
+    <Grid Margin="0,0,0,8">
+     <TextBlock Text="Куда сохранить" FontWeight="SemiBold" VerticalAlignment="Center"/>
+     <Button Content="В «Загрузки»" Click="ResetDestination" IsEnabled="{Binding CanEdit}" HorizontalAlignment="Right" FontSize="12" Padding="10,5" MinHeight="32"/>
+    </Grid>
+    <Grid Margin="0,0,0,6">
+     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <Border Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,10,0">
+      <TextBlock Text="{Binding DestinationLabel}" TextTrimming="CharacterEllipsis" ToolTip="{Binding DestinationLabel}" VerticalAlignment="Center" AutomationProperties.Name="Папка сохранения"/>
+     </Border>
+     <Button x:Name="ChooseButton" Grid.Column="1" Content="Выбрать…" Click="ChooseDestination" IsEnabled="{Binding CanEdit}" AutomationProperties.Name="Выбрать папку сохранения"/>
+    </Grid>
+    <TextBlock Text="Для папки создаётся «Название copy». Файл сохраняет своё имя." TextWrapping="Wrap" Style="{StaticResource Muted}" Margin="0,0,0,20"/>
+    <Border Style="{StaticResource Card}" Margin="0,0,0,18">
+     <StackPanel>
+      <DockPanel Margin="0,0,0,14"><TextBlock Text="Вся загрузка" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/><TextBlock Text="{Binding Percent}" FontSize="27" FontWeight="SemiBold" HorizontalAlignment="Right"/></DockPanel>
+      <ProgressBar x:Name="OverallProgress" Value="{Binding TotalFraction, Mode=OneWay}" AutomationProperties.Name="Прогресс всей загрузки"/>
+      <TextBlock Text="{Binding TotalBytesText}" Style="{StaticResource Muted}" Margin="0,8,0,16"/>
+      <UniformGrid Columns="3" Margin="0,0,0,18">
+       <StackPanel><TextBlock Text="Готово файлов" Style="{StaticResource Muted}"/><TextBlock Text="{Binding DoneText}" FontSize="19" Margin="0,5,0,0"/></StackPanel>
+       <StackPanel><TextBlock Text="Осталось" Style="{StaticResource Muted}"/><TextBlock Text="{Binding RemainingText}" FontSize="19" Margin="0,5,0,0"/></StackPanel>
+       <StackPanel><TextBlock Text="Уже есть" Style="{StaticResource Muted}"/><TextBlock Text="{Binding SkippedText}" FontSize="19" Margin="0,5,0,0"/></StackPanel>
+      </UniformGrid>
+      <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,0,0,16"/>
+      <TextBlock Text="{Binding FileHeading}" Style="{StaticResource Muted}"/>
+      <TextBlock Text="{Binding CurrentFile}" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,6,0,12"/>
+      <ProgressBar Value="{Binding FileFraction, Mode=OneWay}" Height="7" AutomationProperties.Name="Прогресс текущего файла"/>
+      <TextBlock Text="{Binding FileBytesText}" Style="{StaticResource Muted}" Margin="0,8,0,0"/>
+     </StackPanel>
+    </Border>
+    <UniformGrid Columns="3" Margin="2,0,0,20">
+     <StackPanel><TextBlock Text="Скорость" Style="{StaticResource Muted}"/><TextBlock Text="{Binding SpeedText}" FontSize="16" Margin="0,4,0,0"/></StackPanel>
+     <StackPanel><TextBlock Text="Осталось примерно" Style="{StaticResource Muted}"/><TextBlock Text="{Binding EtaText}" FontSize="16" Margin="0,4,0,0"/></StackPanel>
+     <StackPanel><TextBlock Text="Ошибок / не завершено" Style="{StaticResource Muted}"/><TextBlock Text="{Binding ErrorCountText}" FontSize="16" Margin="0,4,0,0"/></StackPanel>
+    </UniformGrid>
+   </StackPanel>
+  </ScrollViewer>
+ </DockPanel>
+</Window>

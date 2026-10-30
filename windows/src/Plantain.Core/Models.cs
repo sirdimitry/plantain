@@ -30,11 +30,14 @@ public abstract record LoaderEvent;
 public sealed record StatusChanged(string Text) : LoaderEvent;
 public sealed record DestinationSelected(string Path) : LoaderEvent;
 public sealed record InventoryFound(int Files, long Bytes) : LoaderEvent;
+public sealed record FileDiscovered(string RemotePath, string Name, long Size) : LoaderEvent;
+public sealed record FileCompleted(string RemotePath) : LoaderEvent;
+public sealed record FileFailed(FileFailure Failure) : LoaderEvent;
 public sealed record FileStarted(string Name, long Size, bool Verifying) : LoaderEvent;
 public sealed record TransferProgress(long CurrentBytes, long NetworkBytes) : LoaderEvent;
 public sealed record TotalsChanged(int Done, int Skipped, long CompletedBytes, int Errors) : LoaderEvent;
 public sealed record DownloadFinished(DownloadResult Result) : LoaderEvent;
-public sealed record FileFailure(string Name, string Message);
+public sealed record FileFailure(string Name, string Message, bool IsDirectory = false);
 public sealed record DownloadResult(int Files, int Done, int Skipped, long CompletedBytes,
     int SizeOnlyFiles, IReadOnlyList<FileFailure> Failures)
 {

@@ -45,6 +45,15 @@ public sealed class DownloadSession(IDownloadRunner? runner = null)
     public string ButtonText { get { lock (sync) return canResume ? "Продолжить" : "Скачать"; } }
     public DownloadResult? LastResult { get { lock (sync) return lastResult; } }
 
+    public void ResetResult()
+    {
+        lock (sync)
+        {
+            if (running) throw new LoaderException("Нельзя сбросить результат во время загрузки.");
+            lastResult = null; canResume = false;
+        }
+    }
+
     public async Task<DownloadResult> RunAsync(string destination, Action<LoaderEvent>? report = null,
         CancellationToken cancellationToken = default)
     {
