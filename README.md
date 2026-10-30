@@ -4,7 +4,7 @@
 
 **macOS: 1.1.1 · стабильная версия.** Этот README описывает приложение для macOS.
 
-Также ведётся разработка [версии для Windows](https://github.com/sirdimitry/plantain/blob/windows/windows/README.md) в отдельной ветке [`windows`](https://github.com/sirdimitry/plantain/tree/windows). Подготовлена предварительная версия Windows с окном приложения, файловой защитой и списком незавершённых загрузок. В Windows добавлена проверка новых Windows-релизов GitHub при запуске. Доступна автономная ZIP-сборка x64; расширенная проверка эксплуатации продолжается. Версии и результаты проверок Windows публикуются в её README отдельно от macOS. [Скачать предварительный Windows ZIP](https://github.com/sirdimitry/plantain/releases/tag/windows-v0.1.0-dev.6).
+Доступна **рабочая версия для Windows 11 x64 — 0.1.0-dev.7** (предварительный выпуск): **[скачать Windows ZIP](https://github.com/sirdimitry/plantain/releases/tag/windows-v0.1.0-dev.7)** · [инструкция и скриншот](https://github.com/sirdimitry/plantain/blob/windows/windows/README.md). Распакуйте архив и запустите Plantain.Windows.exe; .NET отдельно не нужен. Windows поддерживает загрузку папок и файлов, продолжение, проверку целостности, список ошибок и проверку новых Windows-релизов при запуске. Разработка ведётся в отдельной ветке [`windows`](https://github.com/sirdimitry/plantain/tree/windows); расширенная проверка эксплуатации продолжается. Ниже — описание стабильной версии для macOS.
 
 **Подорожник — скачает, когда Диск не может.**
 
