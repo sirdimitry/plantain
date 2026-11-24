@@ -259,7 +259,7 @@ final class VideoPreviewClient: @unchecked Sendable {
     }
 
     func save(_ file: PreviewFile, variant: PreviewVariant, to destination: URL,
-              audioOnly: Bool, encoder: URL?, progress: @Sendable (Int, Int) async -> Void) async throws {
+              audioOnly: Bool, encoder: URL?, progress: @Sendable (Int64, Int64) -> Void) async throws -> Int64 {
         if audioOnly && encoder == nil { throw LoaderError("Для сохранения звука нужен FFmpeg.") }
         let segments = try await segments(for: variant)
         let fm = FileManager.default
@@ -273,23 +273,42 @@ final class VideoPreviewClient: @unchecked Sendable {
             throw LoaderError("Не удалось создать временный файл превью.")
         }
         let output = try FileHandle(forWritingTo: transport)
+        var received: Int64 = 0
         do {
             defer { try? output.close() }
-            for (index, segment) in segments.enumerated() {
-                try Task.checkCancellation()
-                let (part, response) = try await session.download(from: segment)
-                defer { try? fm.removeItem(at: part) }
-                guard let http = response as? HTTPURLResponse, http.statusCode == 200, fileSize(part) > 0,
-                      http.expectedContentLength < 0 || fileSize(part) == http.expectedContentLength else {
-                    throw LoaderError("Не удалось загрузить сегмент \(index + 1).")
+            // Download small batches concurrently and write them in playlist order.
+            for start in stride(from: 0, to: segments.count, by: 3) {
+                let indices = start..<min(start + 3, segments.count)
+                try await withThrowingTaskGroup(of: (Int, Int64).self) { group in
+                    for index in indices {
+                        let segment = segments[index]
+                        group.addTask {
+                            let (part, response) = try await self.session.download(from: segment)
+                            defer { try? fm.removeItem(at: part) }
+                            let length = fileSize(part)
+                            guard let http = response as? HTTPURLResponse, http.statusCode == 200, length > 0,
+                                  http.expectedContentLength < 0 || length == http.expectedContentLength else {
+                                throw LoaderError("Не удалось загрузить сегмент \(index + 1).")
+                            }
+                            let local = staging.appendingPathComponent("segment-\(index).ts")
+                            try fm.moveItem(at: part, to: local)
+                            return (index, length)
+                        }
+                    }
+                    for try await (_, length) in group {
+                        received += length
+                        progress(received, length)
+                    }
                 }
-                let input = try FileHandle(forReadingFrom: part)
-                defer { try? input.close() }
-                while let chunk = try input.read(upToCount: 1024 * 1024), !chunk.isEmpty {
-                    try Task.checkCancellation()
-                    try output.write(contentsOf: chunk)
+                for index in indices {
+                    let local = staging.appendingPathComponent("segment-\(index).ts")
+                    let input = try FileHandle(forReadingFrom: local)
+                    defer { try? input.close(); try? fm.removeItem(at: local) }
+                    while let chunk = try input.read(upToCount: 1024 * 1024), !chunk.isEmpty {
+                        try Task.checkCancellation()
+                        try output.write(contentsOf: chunk)
+                    }
                 }
-                await progress(index + 1, segments.count)
             }
             try output.synchronize()
         }
@@ -328,7 +347,7 @@ final class VideoPreviewClient: @unchecked Sendable {
             let target = try safeChild(parent, "\(stem) (\(label))\(suffix).\(ext)")
             do {
                 try fm.moveItem(at: result, to: target)
-                return
+                return received
             } catch let error as NSError where error.domain == NSCocoaErrorDomain &&
                 error.code == NSFileWriteFileExistsError {
                 copy += 1

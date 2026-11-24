@@ -42,14 +42,15 @@ func timeText(_ seconds: Double) -> String {
     @Published var folder: URL?
     @Published var destination = LoaderModel.downloadsURL
     @Published var networkBytes: Int64 = 0
+    @Published var previewLabel: String?
     @Published var elapsed: Double = 0
     private var started: Date?
     private var timer: Timer?
     private var task: Task<Void, Never>?
     private var assertion: NSObjectProtocol?
     var speed: Double { elapsed > 0 ? Double(networkBytes) / elapsed : 0 }
-    var totalValue: Int64 { min(total, completed + (verifying ? 0 : current)) }
-    var fraction: Double { total > 0 ? Double(totalValue) / Double(total) : (finished && errors == 0 ? 1 : 0) }
+    var totalValue: Int64 { previewLabel != nil ? networkBytes : min(total, completed + (verifying ? 0 : current)) }
+    var fraction: Double { total > 0 ? min(1, Double(totalValue) / Double(total)) : (finished && errors == 0 ? 1 : 0) }
     var fileFraction: Double { fileSize > 0 ? min(1, Double(current) / Double(fileSize)) : 0 }
     var eta: String { speed > 0 ? timeText(Double(max(0, total-totalValue)) / speed) : "—" }
     var canStart: Bool { !running && !link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -62,6 +63,56 @@ func timeText(_ seconds: Double) -> String {
             return
         }
         link = source
+        launch(preview: nil) { destination, reporter in
+            try await DownloadEngine(api: DiskAPI(link: source), destination: destination, report: reporter,
+                                     selectedPaths: selectedPaths).run()
+            return nil
+        }
+    }
+
+    func startPreview(_ files: [PreviewFile], choice: VideoChoice, encoder: URL?) {
+        guard !files.isEmpty else { return }
+        if choice == .original {
+            start(selectedPaths: Set(files.map(\.remotePath)))
+            return
+        }
+        launch(preview: choice.title) { destination, report in
+            let jobs = files.compactMap { file in choice.variant(for: file).map { (file, $0) } }
+            let client = VideoPreviewClient()
+            let estimated = jobs.compactMap { $0.1.estimatedBytes }.reduce(0, +)
+            var remaining = estimated
+            var completed: Int64 = 0
+            var done = 0
+            var failures: [String] = []
+            report(.destination(destination))
+            report(.inventory(jobs.count, estimated))
+            for (file, variant) in jobs {
+                try Task.checkCancellation()
+                let format = choice == .audio ? "M4A" : encoder == nil ? "MPEG-TS" : "MP4"
+                report(.status("Скачиваю \(variant.height)p → \(format) · \(file.name)"))
+                report(.file("\(file.name) · \(variant.height)p", variant.estimatedBytes ?? 0, false))
+                do {
+                    let bytes = try await client.save(file, variant: variant, to: destination,
+                                                       audioOnly: choice == .audio, encoder: encoder) { current, increment in
+                        report(.progress(current, increment))
+                    }
+                    completed += bytes
+                    done += 1
+                } catch {
+                    try Task.checkCancellation()
+                    failures.append("\(file.name): \(error.localizedDescription)")
+                }
+                remaining -= variant.estimatedBytes ?? 0
+                report(.inventory(jobs.count, completed + remaining))
+                report(.totals(done, 0, completed, failures.count))
+            }
+            return (done, jobs.count, failures)
+        }
+    }
+
+    private func launch(preview: String?, operation: @escaping @Sendable (URL, @escaping Reporter) async throws -> (Int, Int, [String])?) {
+        guard !running else { return }
+        previewLabel = preview
         running = true; stopping = false; finished = false; error = nil
         count = 0; total = 0; completed = 0; done = 0; skipped = 0; errors = 0
         file = ""; fileSize = 0; current = 0; verifying = true; networkBytes = 0; elapsed = 0
@@ -80,9 +131,9 @@ func timeText(_ seconds: Double) -> String {
         }
         task = Task.detached(priority: .userInitiated) { [weak self] in
             do {
-                let engine = DownloadEngine(api: DiskAPI(link: source), destination: destination, report: reporter,
-                                            selectedPaths: selectedPaths)
-                try await engine.run()
+                if let result = try await operation(destination, reporter) {
+                    await self?.finishPreview(done: result.0, count: result.1, failures: result.2)
+                }
                 await self?.end(cancelled: false, failure: nil)
             } catch {
                 let cancelled = Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled
@@ -94,7 +145,9 @@ func timeText(_ seconds: Double) -> String {
         switch event {
         case .status(let value): status = value
         case .destination(let value): folder = value
-        case .inventory(let files, let size): count = files; total = size
+        case .inventory(let files, let size):
+            count = files
+            total = previewLabel == nil ? size : max(networkBytes, size)
         case .file(let name, let size, let checking):
             file = name; fileSize = size; current = 0; verifying = checking
         case .progress(let value, let received):
@@ -102,6 +155,7 @@ func timeText(_ seconds: Double) -> String {
             if received > 0 {
                 if started == nil { started = Date() }
                 networkBytes += received
+                if previewLabel != nil { total = max(total, networkBytes) }
             }
         case .totals(let files, let old, let size, let failures):
             done = files; skipped = old; completed = size; errors = failures
@@ -130,11 +184,21 @@ func timeText(_ seconds: Double) -> String {
             }
         }
     }
+    private func finishPreview(done: Int, count: Int, failures: [String]) {
+        finished = true
+        total = networkBytes
+        status = "Сохранено: \(done) из \(count) · \(previewLabel ?? "")"
+        if !failures.isEmpty { error = failures.prefix(2).joined(separator: "\n") }
+    }
+
     private func end(cancelled: Bool, failure: String?) {
         running = false; stopping = false; task = nil
         timer?.invalidate(); timer = nil
         if let assertion { ProcessInfo.processInfo.endActivity(assertion); self.assertion = nil }
-        if cancelled { status = "Остановлено. Готовые файлы и частичная загрузка сохранены." }
+        if cancelled {
+            status = previewLabel == nil ? "Остановлено. Готовые файлы и частичная загрузка сохранены."
+                : "Остановлено. Сохранено: \(done) из \(count)."
+        }
         if let failure { error = failure; status = "Не удалось завершить загрузку" }
     }
     func stop() {
@@ -149,6 +213,7 @@ func timeText(_ seconds: Double) -> String {
         guard !running else { return }
         destination = url
         folder = nil
+        previewLabel = nil
         finished = false; done = 0; skipped = 0; errors = 0
         count = 0; total = 0; completed = 0; current = 0; fileSize = 0; file = ""
         error = nil; status = "Папка сохранения выбрана"
@@ -195,10 +260,11 @@ struct Meter: View {
 struct Detail: View {
     let title: String
     let value: String
+    var emphasized = false
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 14, weight: .medium, design: .rounded)).monospacedDigit()
+            Text(value).font(.system(size: emphasized ? 20 : 14, weight: emphasized ? .semibold : .medium, design: .rounded)).monospacedDigit()
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -267,7 +333,7 @@ struct ContentView: View {
             }
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("Вся загрузка").font(.system(size: 13, weight: .semibold))
+                    Text(model.previewLabel.map { "Вся загрузка · " + $0 } ?? "Вся загрузка").font(.system(size: 13, weight: .semibold))
                     Spacer()
                     Text(String(format: "%.1f%%", model.fraction * 100))
                         .font(.system(size: 22, weight: .medium, design: .rounded)).monospacedDigit()
@@ -275,7 +341,7 @@ struct ContentView: View {
                 VStack(spacing: 9) {
                     Meter(value: model.fraction, height: 12).accessibilityLabel("Прогресс всей загрузки")
                     HStack {
-                        Text("\(bytes(model.totalValue)) из \(bytes(model.total))")
+                        Text("\(model.previewLabel == nil ? "" : "Получено ")\(bytes(model.totalValue)) из \(model.previewLabel != nil && !model.finished ? "≈ " : "")\(bytes(model.total))")
                         Spacer()
                         Text("Осталось \(bytes(max(0, model.total-model.totalValue)))")
                     }.font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
@@ -300,7 +366,7 @@ struct ContentView: View {
                         .frame(height: 32, alignment: .topLeading).help(model.file)
                     Meter(value: model.fileFraction, height: 9).accessibilityLabel("Прогресс текущего файла")
                     HStack {
-                        Text("\(bytes(model.current)) из \(bytes(model.fileSize))")
+                        Text("\(bytes(model.current)) из \(model.previewLabel != nil && model.fileSize > 0 ? "≈ " : "")\(model.fileSize > 0 || model.previewLabel == nil ? bytes(model.fileSize) : "—")")
                         Spacer()
                         Text("Осталось \(bytes(max(0, model.fileSize-model.current)))")
                     }.font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
@@ -310,7 +376,7 @@ struct ContentView: View {
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(0.06)))
             HStack(spacing: 20) {
-                Detail(title: "СКОРОСТЬ", value: model.speed > 0 ? bytes(Int64(model.speed)) + "/с" : "—")
+                Detail(title: "СКОРОСТЬ", value: model.speed > 0 ? bytes(Int64(model.speed)) + "/с" : "—", emphasized: true)
                 Detail(title: "ОСТАЛОСЬ ПРИМЕРНО", value: model.eta)
                 Detail(title: "ОШИБОК", value: "\(model.errors)")
             }.padding(.horizontal, 2)
@@ -343,7 +409,7 @@ struct ContentView: View {
                     Button("Качество видео…") { showingVideoOptions = true }
                         .controlSize(.large).disabled(!model.canStart)
                     Button { model.start() } label: {
-                        Label(model.finished || model.done > 0 ? "Продолжить" : "Скачать исходники", systemImage: "arrow.down")
+                        Label(model.previewLabel == nil && (model.finished || model.done > 0) ? "Продолжить" : "Скачать исходники", systemImage: "arrow.down")
                             .frame(minWidth: 100)
                     }
                     .buttonStyle(.borderedProminent).tint(accent).controlSize(.large)
@@ -364,10 +430,9 @@ struct ContentView: View {
         .onChange(of: model.running) { _ in presentPendingUpdate() }
         .sheet(item: $updateToShow) { MacUpdateView(update: $0) }
         .sheet(isPresented: $showingVideoOptions, onDismiss: presentPendingUpdate) {
-            VideoOptionsView(source: model.link.trimmingCharacters(in: .whitespacesAndNewlines),
-                             destination: model.destination) { paths in
+            VideoOptionsView(source: model.link.trimmingCharacters(in: .whitespacesAndNewlines)) { files, choice, encoder in
                 showingVideoOptions = false
-                model.start(selectedPaths: paths)
+                model.startPreview(files, choice: choice, encoder: encoder)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.stop() }
