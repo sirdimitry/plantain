@@ -8,9 +8,9 @@
 
 Версия для macOS написана на **Swift** и использует нативные интерфейсные технологии Apple — **SwiftUI и AppKit**.
 
-**macOS: 1.2.0 · стабильная версия.**
+**macOS: 1.2.1 · стабильная версия.**
 
-**[Скачать для macOS — DMG](https://github.com/sirdimitry/plantain/releases/tag/v1.2.0)** · [Приватность](docs/PRIVACY.md)
+**[Скачать для macOS — DMG](https://github.com/sirdimitry/plantain/releases/tag/v1.2.1)** · [Приватность](docs/PRIVACY.md)
 
 ### Версия для Windows
 
