@@ -6,7 +6,7 @@
 
 ## Установка и обновление
 
-1. Скачайте `Setup.exe` с [выпуска dev.9](https://github.com/sirdimitry/plantain/releases/tag/windows-v0.1.0-dev.9).
+1. Скачайте `Setup.exe` из актуального выпуска. [Выпуски Windows](https://github.com/sirdimitry/plantain/releases?q=windows)
 2. Запустите установщик и следуйте мастеру. Можно выбрать папку; по умолчанию — `%LOCALAPPDATA%\Programs\Plantain`.
 3. Открывайте «Подорожник» из меню «Пуск». Ярлык рабочего стола — необязательная опция мастера.
 
