@@ -1,4 +1,4 @@
-param([string]$Dotnet = 'dotnet')
+param([string]$Dotnet = 'dotnet', [string]$FfmpegPackage = '')
 $ErrorActionPreference = 'Stop'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_NOLOGO = '1'
@@ -13,6 +13,7 @@ if (git -C $repoRoot status --porcelain --untracked-files=normal) { $revision +=
 $name = "Plantain-$version-win-x64"
 $folder = Join-Path $windowsRoot "artifacts/portable/$revision/$name"
 $packageRoot = Join-Path $windowsRoot "artifacts/packages/$revision"
+if ($FfmpegPackage) { $FfmpegPackage = (Resolve-Path -LiteralPath $FfmpegPackage).Path }
 New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
 Push-Location $windowsRoot
 try {
@@ -22,6 +23,7 @@ try {
         if (!(Test-Path -LiteralPath (Join-Path $folder $required))) { throw "Missing portable component: $required" }
     }
     Copy-Item -LiteralPath (Join-Path $windowsRoot 'docs/PORTABLE.ru.txt') -Destination (Join-Path $folder 'Прочитайте меня.txt')
+    & (Join-Path $PSScriptRoot 'include-ffmpeg.ps1') -Package $FfmpegPackage -Destination $folder
     $archive = Join-Path $packageRoot "$name.zip"
     if (Test-Path -LiteralPath $archive) { throw 'Archive exists; preserve it or use a new commit before packaging again' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem

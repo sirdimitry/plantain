@@ -17,6 +17,8 @@
    <TextBlock x:Name="Status" Text="Проверяю ссылку и доступные потоки…" TextWrapping="Wrap"
     AutomationProperties.LiveSetting="Polite" MaxHeight="72"/>
    <DockPanel Margin="0,14,0,0" LastChildFill="False">
+    <Button x:Name="RetryButton" DockPanel.Dock="Left" Content="Перепроверить" Click="Retry"
+     Visibility="Collapsed" Margin="0,0,8,0"/>
     <Button x:Name="DownloadButton" DockPanel.Dock="Right" Content="Скачать выбранное" Click="Download"
      Style="{StaticResource Primary}" IsDefault="True" IsEnabled="False" Margin="8,0,0,0"/>
     <Button x:Name="CloseButton" DockPanel.Dock="Right" Content="Закрыть" Click="CloseOrStop" MinWidth="105"/>

@@ -1,4 +1,4 @@
-param([string]$Dotnet = 'dotnet', [string]$Iscc = '', [switch]$SkipPublish)
+param([string]$Dotnet = 'dotnet', [string]$Iscc = '', [switch]$SkipPublish, [string]$FfmpegPackage = '')
 $ErrorActionPreference = 'Stop'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_NOLOGO = '1'
@@ -23,6 +23,7 @@ $payload = Join-Path $windowsRoot "artifacts/installer-payload/$revision/win-x64
 $packages = Join-Path $windowsRoot "artifacts/packages/$revision"
 $name = "Plantain-$version-win-x64-Setup.exe"
 $setup = Join-Path $packages $name
+if ($FfmpegPackage) { $FfmpegPackage = (Resolve-Path -LiteralPath $FfmpegPackage).Path }
 if (Test-Path -LiteralPath $setup) { throw 'Installer exists; preserve it or package a new commit' }
 New-Item -ItemType Directory -Path $packages -Force | Out-Null
 Push-Location $windowsRoot
@@ -34,6 +35,7 @@ try {
     foreach ($required in @('Plantain.Windows.exe', 'coreclr.dll', 'hostfxr.dll', 'PresentationFramework.dll')) {
         if (!(Test-Path -LiteralPath (Join-Path $payload $required))) { throw "Missing installer runtime component: $required" }
     }
+    & (Join-Path $PSScriptRoot 'include-ffmpeg.ps1') -Package $FfmpegPackage -Destination $payload
     & $Iscc /Q "/DAppVersion=$version" "/DNumericVersion=$numeric" "/DPayloadDir=$payload" "/DPackageDir=$packages" (Join-Path $windowsRoot 'installer/Plantain.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
     $hash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()

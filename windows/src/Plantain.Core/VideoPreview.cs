@@ -268,6 +268,9 @@ public sealed class VideoPreviewClient : IDisposable
 
     public static string? FindFfmpeg()
     {
+        var bundled = Path.Combine(AppContext.BaseDirectory, "ffmpeg", "ffmpeg.exe");
+        if (OperatingSystem.IsWindows() && File.Exists(bundled)) return bundled;
+
         foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
         {
             var path = directory.Trim().Trim('"');

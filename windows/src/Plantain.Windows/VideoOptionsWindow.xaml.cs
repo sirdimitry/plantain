@@ -44,6 +44,17 @@ public partial class VideoOptionsWindow : Window
     {
         if (loaded) return;
         loaded = true;
+        await InspectAsync();
+    }
+
+    private async void Retry(object sender, RoutedEventArgs args) => await InspectAsync();
+
+    private async Task InspectAsync()
+    {
+        if (operation is not null) return;
+        var previousChoice = Choices.SelectedItem as Option;
+        RetryButton.IsEnabled = Choices.IsEnabled = DownloadButton.IsEnabled = false;
+        SetStatus("Проверяю ссылку и доступные потоки…");
         using var cancellation = new CancellationTokenSource();
         operation = cancellation;
         Progress.IsIndeterminate = true;
@@ -51,18 +62,26 @@ public partial class VideoOptionsWindow : Window
         try
         {
             using var client = new VideoPreviewClient();
-            videos = await client.InspectAsync(link, new Progress<(int Done, int Total)>(scale =>
+            var found = await client.InspectAsync(link, new Progress<(int Done, int Total)>(scale =>
             {
                 if (operation == cancellation && !cancellation.IsCancellationRequested)
                     SetStatus($"Проверено видео: {scale.Done} из {scale.Total}");
             }), cancellation.Token);
+            var previous = videos.DistinctBy(file => file.RemotePath).ToDictionary(file => file.RemotePath, StringComparer.Ordinal);
+            videos = found.Select(file => previous.TryGetValue(file.RemotePath, out var known) ? file with
+            {
+                Renditions = file.Renditions.Concat(known.Renditions).DistinctBy(variant => variant.Height)
+                    .OrderBy(variant => variant.Height).ToArray()
+            } : file).ToArray();
             var choices = new List<Option>();
             if (videos.Any(file => file.OriginalBytes.HasValue)) choices.Add(Label(new(Mode.Original, 0, "Исходное качество")));
             var heights = videos.SelectMany(file => file.Renditions).Select(variant => variant.Height).Distinct().Order().ToArray();
             choices.AddRange(heights.Select(height => Label(new(Mode.Video, height, $"{height}p"))));
             if (ffmpeg is not null && heights.Length > 0) choices.Add(Label(new(Mode.Audio, 0, "Только звук")));
             Choices.ItemsSource = choices;
-            Choices.SelectedIndex = choices.Count > 0 ? 0 : -1;
+            var selected = previousChoice is null ? -1 :
+                choices.FindIndex(choice => choice.Mode == previousChoice.Mode && choice.Height == previousChoice.Height);
+            Choices.SelectedIndex = selected >= 0 ? selected : choices.Count > 0 ? 0 : -1;
             SetStatus(choices.Count > 0 ? "Выберите вариант загрузки." :
                 videos.Count == 0 ? "По ссылке не найдено видео." : "Яндекс Диск не выдал доступных вариантов загрузки.");
         }
@@ -75,6 +94,10 @@ public partial class VideoOptionsWindow : Window
             Progress.Visibility = Visibility.Collapsed;
             Choices.IsEnabled = Choices.Items.Count > 0;
             DownloadButton.IsEnabled = Choices.SelectedItem is Option;
+            var heights = videos.SelectMany(file => file.Renditions).Select(variant => variant.Height).Distinct().Count();
+            RetryButton.Visibility = heights == 0 || videos.Any(file => file.Renditions.Count < heights)
+                ? Visibility.Visible : Visibility.Collapsed;
+            RetryButton.IsEnabled = true;
         }
     }
 

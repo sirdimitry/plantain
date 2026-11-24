@@ -46,6 +46,11 @@ try {
     Check ((Install $setupFile) -eq 0) 'offline installation succeeds in a path with spaces and Cyrillic'
     $exe = [IO.Path]::GetFullPath((Join-Path $destination 'app/Plantain.Windows.exe'))
     Check ((Test-Path -LiteralPath $exe) -and (Test-Path -LiteralPath (Join-Path $destination 'app/coreclr.dll'))) 'application and private runtime installed'
+    $mediaTool = Join-Path $destination 'app/ffmpeg/ffmpeg.exe'
+    Check ((Test-Path -LiteralPath $mediaTool) -and
+        (Test-Path -LiteralPath (Join-Path $destination 'app/ffmpeg/COPYING.LGPLv2.1')) -and
+        (Test-Path -LiteralPath (Join-Path $destination 'app/ffmpeg/ffmpeg-9.1.tar.xz'))) 'media tool, license and source installed'
+    Check ((RunInstaller $mediaTool @('-version')) -eq 0) 'installed media tool runs'
     $installed = Get-ItemProperty -LiteralPath $uninstallKey
     Check ($installed.DisplayVersion -eq $version -and $installed.InstallLocation.TrimEnd('\') -eq $destination.TrimEnd('\')) 'correct version and path registered in current-user Apps'
     Check ((Test-Path -LiteralPath $startShortcut) -and (Test-Path -LiteralPath $desktopShortcut)) 'Start menu and optional desktop shortcuts created'
