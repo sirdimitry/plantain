@@ -190,6 +190,19 @@ func item(_ name: String, type: String = "file", data: Data? = nil) -> RemoteIte
     try check(plainSummary.last?.0 == 0 && plainSummary.last?.1 == 2 &&
               exists(plainTarget.appendingPathComponent("fresh.bin")),
               "size-only verification reported separately")
+    let selectedBase = base.appendingPathComponent("selected")
+    let selectedTarget = selectedBase.appendingPathComponent("Selected copy")
+    try fm.createDirectory(at: selectedBase, withIntermediateDirectories: true)
+    try await DownloadEngine(
+        api: FakeDisk(root: item("Selected", type: "dir"), files: [
+            item("video.mp4", data: data), item("other.mp4", data: data)
+        ]),
+        destination: selectedBase, report: { _ in }, selectedPaths: ["/video.mp4"]
+    ).run()
+    let selectedBytes = try Data(contentsOf: selectedTarget.appendingPathComponent("video.mp4"))
+    try check(selectedBytes == data &&
+              !exists(selectedTarget.appendingPathComponent("other.mp4")),
+              "selected original preserves bytes and excludes other files")
     let defaultsDomain = "diskloader.test." + UUID().uuidString
     let prefs = UserDefaults(suiteName: defaultsDomain)!
     defer { prefs.removePersistentDomain(forName: defaultsDomain) }
@@ -210,6 +223,21 @@ func item(_ name: String, type: String = "file", data: Data? = nil) -> RemoteIte
     try check(!leftovers.contains { $0.lastPathComponent.hasPrefix(".yadisk-errors-") }, "no persistent error report or path history")
     let partialName = partialFileName(size: 6, sha256: meta.sha256, md5: nil)
     try check(partialName.count == 69 && !partialName.contains("test-source"), "partial filename uses content fingerprint only")
+    func updateFixture(_ tag: String, _ version: String, preview: Bool = false, complete: Bool = true) -> [String: Any] {
+        let archive = "Plantain-\(version)-universal.dmg"
+        let names = complete ? [archive, archive + ".sha256"] : [archive]
+        return ["tag_name": tag, "draft": false, "prerelease": preview,
+                "assets": names.map { ["name": $0, "state": "uploaded", "size": 1] as [String: Any] }]
+    }
+    let updateData = try JSONSerialization.data(withJSONObject: [
+        updateFixture("v1.9.0", "1.9.0"), updateFixture("v1.11.0", "1.11.0"),
+        updateFixture("windows-v9.0.0", "9.0.0"), updateFixture("v2.0.0", "2.0.0", preview: true),
+        updateFixture("v3.0.0", "3.0.0", complete: false)
+    ])
+    let availableUpdate = try MacUpdates.selectedRelease(in: updateData, installed: "1.8.0")
+    let currentUpdate = try MacUpdates.selectedRelease(in: updateData, installed: "1.11.0")
+    try check(availableUpdate?.releasePage.absoluteString.hasSuffix("/v1.11.0") == true && currentUpdate == nil,
+              "macOS updater chooses the newer complete stable DMG and ignores Windows")
     print("ALL CHECKS PASSED")
  }
 }
