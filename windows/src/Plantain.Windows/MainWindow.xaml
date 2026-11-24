@@ -57,7 +57,7 @@
     <TextBlock Text="Для папки создаётся «Название copy». Файл сохраняет своё имя." TextWrapping="Wrap" Style="{StaticResource Muted}" Margin="0,0,0,20"/>
     <Border Style="{StaticResource Card}" Margin="0,0,0,18">
      <StackPanel>
-      <DockPanel Margin="0,0,0,14"><TextBlock Text="Вся загрузка" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/><TextBlock Text="{Binding Percent}" FontSize="27" FontWeight="SemiBold" HorizontalAlignment="Right"/></DockPanel>
+      <DockPanel Margin="0,0,0,14"><TextBlock Text="{Binding OverallHeading}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/><TextBlock Text="{Binding Percent}" FontSize="27" FontWeight="SemiBold" HorizontalAlignment="Right"/></DockPanel>
       <ProgressBar x:Name="OverallProgress" Value="{Binding TotalFraction, Mode=OneWay}" AutomationProperties.Name="Прогресс всей загрузки"/>
       <TextBlock Text="{Binding TotalBytesText}" Style="{StaticResource Muted}" Margin="0,8,0,16"/>
       <UniformGrid Columns="3" Margin="0,0,0,18">
@@ -73,7 +73,7 @@
      </StackPanel>
     </Border>
     <UniformGrid Columns="3" Margin="2,0,0,20">
-     <StackPanel><TextBlock Text="Скорость" Style="{StaticResource Muted}"/><TextBlock Text="{Binding SpeedText}" FontSize="16" Margin="0,4,0,0"/></StackPanel>
+     <StackPanel><TextBlock Text="Скорость" Style="{StaticResource Muted}"/><TextBlock Text="{Binding SpeedText}" FontSize="21" FontWeight="SemiBold" Margin="0,4,0,0"/></StackPanel>
      <StackPanel><TextBlock Text="Осталось примерно" Style="{StaticResource Muted}"/><TextBlock Text="{Binding EtaText}" FontSize="16" Margin="0,4,0,0"/></StackPanel>
      <StackPanel><TextBlock Text="Ошибок / не завершено" Style="{StaticResource Muted}"/><TextBlock Text="{Binding ErrorCountText}" FontSize="16" Margin="0,4,0,0"/></StackPanel>
     </UniformGrid>

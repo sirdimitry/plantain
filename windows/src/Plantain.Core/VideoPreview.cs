@@ -265,7 +265,7 @@ public sealed class VideoPreviewClient : IDisposable
     }
 
     public async Task SaveAsync(VideoPreviewFile file, VideoRendition variant, string destination, bool audioOnly,
-        string? ffmpeg, IProgress<(int Done, int Total)>? progress, CancellationToken token)
+        string? ffmpeg, Action<long, long>? progress, CancellationToken token)
     {
         if (audioOnly && ffmpeg is null) throw new LoaderException("Для сохранения звука нужен FFmpeg.");
         var parts = await SegmentsAsync(variant, token).ConfigureAwait(false);
@@ -292,10 +292,11 @@ public sealed class VideoPreviewClient : IDisposable
         finally { if (!published) WindowsFiles.RemoveTemporaryFile(output); }
     }
 
-    private async Task CopySegmentsAsync(Uri[] parts, Stream output, IProgress<(int Done, int Total)>? progress,
+    private async Task CopySegmentsAsync(Uri[] parts, Stream output, Action<long, long>? progress,
         CancellationToken token)
     {
         var buffer = new byte[64 * 1024];
+        long received = 0;
         for (var index = 0; index < parts.Length; index++)
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -309,15 +310,16 @@ public sealed class VideoPreviewClient : IDisposable
             {
                 await output.WriteAsync(buffer.AsMemory(0, count), token).ConfigureAwait(false);
                 length += count;
+                received += count;
+                progress?.Invoke(received, count);
             }
             if (length == 0 || response.Content.Headers.ContentLength is long expected && length != expected)
                 throw new LoaderException($"Сегмент {index + 1} загружен не полностью.");
-            progress?.Report((index + 1, parts.Length));
         }
     }
 
     private async Task RemuxAsync(string ffmpeg, Uri[] parts, FileStream output, bool audioOnly,
-        IProgress<(int Done, int Total)>? progress, CancellationToken token)
+        Action<long, long>? progress, CancellationToken token)
     {
         var info = new ProcessStartInfo(ffmpeg)
         {

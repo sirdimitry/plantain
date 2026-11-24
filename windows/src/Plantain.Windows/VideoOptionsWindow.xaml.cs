@@ -21,18 +21,16 @@ public partial class VideoOptionsWindow : Window
     }
 
     private sealed record Row(string Name, string Detail);
-    private readonly string link, destination;
-    private readonly IWindowsServices services;
+    private readonly string link;
     private readonly string? ffmpeg = VideoPreviewClient.FindFfmpeg();
     private IReadOnlyList<VideoPreviewFile> videos = [];
     private CancellationTokenSource? operation;
-    private bool loaded, downloading;
+    private bool loaded;
+    internal VideoSelection? Selection { get; private set; }
 
-    public VideoOptionsWindow(string link, string destination, IWindowsServices services)
+    public VideoOptionsWindow(string link)
     {
         this.link = link;
-        this.destination = destination;
-        this.services = services;
         InitializeComponent();
         PreviewKeyDown += (_, args) =>
         {
@@ -110,97 +108,16 @@ public partial class VideoOptionsWindow : Window
         DownloadButton.Content = option.Mode == Mode.Original ? "Скачать исходники" : "Скачать выбранное";
     }
 
-    private async void Download(object sender, RoutedEventArgs args)
+    private void Download(object sender, RoutedEventArgs args)
     {
         if (operation is not null || Choices.SelectedItem is not Option option) return;
         var selected = videos.Where(option.Includes).ToArray();
         if (selected.Length == 0) return;
-        using var cancellation = new CancellationTokenSource();
-        var token = cancellation.Token;
-        operation = cancellation;
-        downloading = true;
-        Choices.IsEnabled = DownloadButton.IsEnabled = false;
-        CloseButton.Content = "Остановить";
-        Progress.Value = 0;
-        Progress.Maximum = selected.Length;
-        Progress.IsIndeterminate = option.Mode == Mode.Original;
-        Progress.Visibility = Visibility.Visible;
-        SetStatus("Готовлю загрузку…");
-        var saved = 0;
-        var failures = new Dictionary<string, string>(StringComparer.Ordinal);
-        try
-        {
-            using var awake = services.KeepAwake();
-            if (option.Mode == Mode.Original)
-            {
-                var paths = selected.Select(file => file.RemotePath).ToHashSet(StringComparer.Ordinal);
-                var progress = new Progress<LoaderEvent>(item =>
-                {
-                    if (operation != cancellation || token.IsCancellationRequested) return;
-                    if (item is FileStarted file) SetStatus("Обрабатываю " + file.Name.TrimStart('/') + "…");
-                    if (item is FileCompleted) Progress.IsIndeterminate = false;
-                    if (item is TotalsChanged totals)
-                    {
-                        Progress.Value = totals.Done;
-                        saved = totals.Done;
-                        if (saved > 0) OpenButton.Visibility = Visibility.Visible;
-                    }
-                });
-                var result = await Task.Run(async () =>
-                {
-                    using var api = new DiskApi(link);
-                    using var downloader = new FileDownloader();
-                    return await new DownloadEngine(api, downloader, selectedPaths: paths)
-                        .RunAsync(destination, ((IProgress<LoaderEvent>)progress).Report, token);
-                }, token);
-                saved = result.Done;
-                foreach (var failure in result.Failures) failures[failure.Name] = failure.Message;
-            }
-            else
-            {
-                using var client = new VideoPreviewClient();
-                for (var index = 0; index < selected.Length; index++)
-                {
-                    token.ThrowIfCancellationRequested();
-                    var file = selected[index];
-                    var variant = option.Rendition(file)!;
-                    var finished = index;
-                    SetStatus($"Загружаю {file.Name} · {variant.Height}p…");
-                    var progress = new Progress<(int Done, int Total)>(scale =>
-                    {
-                        if (operation == cancellation && !token.IsCancellationRequested)
-                            Progress.Value = finished + (double)scale.Done / scale.Total;
-                    });
-                    try
-                    {
-                        await client.SaveAsync(file, variant, destination, option.Mode == Mode.Audio, ffmpeg, progress, token);
-                        saved++;
-                        OpenButton.Visibility = Visibility.Visible;
-                    }
-                    catch (Exception error) when (!token.IsCancellationRequested)
-                    { failures[file.Name] = error is LoaderException ? error.Message : "Проверьте доступ к сети и папке."; }
-                    Progress.Value = index + 1;
-                }
-            }
-            if (saved > 0) OpenButton.Visibility = Visibility.Visible;
-            SetStatus($"Готово: {saved} из {selected.Length}." +
-                (failures.Count == 0 ? "" : $" Ошибки: {failures.Count}. Причины указаны в списке."));
-            if (failures.Count > 0)
-                Files.ItemsSource = selected.Select(file => new Row(file.Name, failures.TryGetValue(file.Name, out var reason) ||
-                    failures.TryGetValue(file.RemotePath, out reason) ? reason : "—")).ToArray();
-        }
-        catch (Exception) when (token.IsCancellationRequested)
-        { SetStatus($"Остановлено. Готово: {saved} из {selected.Length}."); }
-        catch (Exception error)
-        { SetStatus(error is LoaderException ? error.Message : "Не удалось завершить загрузку. Проверьте доступ к сети и папке."); }
-        finally
-        {
-            downloading = false;
-            operation = null;
-            Progress.Visibility = Visibility.Collapsed;
-            Choices.IsEnabled = DownloadButton.IsEnabled = true;
-            CloseButton.Content = "Закрыть";
-        }
+        Selection = option.Mode == Mode.Original
+            ? new VideoSelection(selected.Select(file => file.RemotePath).ToHashSet(StringComparer.Ordinal), [], "", false, null)
+            : new VideoSelection(null, selected.Select(file => (file, option.Rendition(file)!)).ToArray(),
+                option.Mode == Mode.Audio ? "Только звук" : $"{option.Height}p", option.Mode == Mode.Audio, ffmpeg);
+        DialogResult = true;
     }
 
     private void SetStatus(string message)
@@ -209,21 +126,7 @@ public partial class VideoOptionsWindow : Window
         UIElementAutomationPeer.FromElement(Status)?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
     }
 
-    private void CloseOrStop(object sender, RoutedEventArgs args)
-    {
-        if (downloading) { operation?.Cancel(); return; }
-        Close();
-    }
+    private void CloseOrStop(object sender, RoutedEventArgs args) => Close();
 
-    private void OnClosing(object? sender, CancelEventArgs args)
-    {
-        operation?.Cancel();
-        args.Cancel = downloading;
-    }
-
-    private void OpenFolder(object sender, RoutedEventArgs args)
-    {
-        try { services.OpenFolder(destination); }
-        catch { SetStatus("Не удалось открыть папку сохранения."); }
-    }
+    private void OnClosing(object? sender, CancelEventArgs args) => operation?.Cancel();
 }

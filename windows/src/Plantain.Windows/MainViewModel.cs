@@ -10,6 +10,9 @@ namespace Plantain.Windows;
 
 public sealed record FailureRow(string Name, string RelativePath, string Reason, bool IsDirectory = false);
 
+internal sealed record VideoSelection(IReadOnlySet<string>? Originals,
+    IReadOnlyList<(VideoPreviewFile File, VideoRendition Rendition)> Previews, string Label, bool AudioOnly, string? Ffmpeg);
+
 public sealed class MainViewModel : INotifyPropertyChanged
 {
     private readonly DownloadSession session;
@@ -31,6 +34,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool running, stopping, verifying, succeeded;
     private long total, completed, current, currentSize, networkBytes;
     private int count, done, skipped, errors;
+    private string preview = "";
+    private DownloadControl? selectedOriginalControl;
 
     public MainViewModel(IDownloadRunner? runner = null, IWindowsServices? services = null)
     {
@@ -53,43 +58,49 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsStopping => stopping;
     public bool CanStop => running && !stopping;
     public bool CanStart => !running && session.CanStart && destination.Length > 0;
-    public string StartText => session.ButtonText;
+    public string StartText => preview.Length > 0 ? "Скачать исходники" : session.ButtonText;
+    public string OverallHeading => preview.Length > 0 ? "Вся загрузка · " + preview : "Вся загрузка";
     public string StopText => stopping ? "Останавливаю…" : "Остановить";
     public bool CanSkip => running && !stopping && currentDownload;
     public string Status => retry is not null && !stopping
         ? $"Попытка {retry.FailedAttempt} из 5 · повтор через {Math.Max(0, Math.Ceiling((retry.Until - DateTimeOffset.UtcNow).TotalSeconds)):0} с"
         : status;
-    public void SkipCurrent() { if (CanSkip) { session.SkipCurrent(); currentDownload = false; retry = null; status = "Пропускаю файл…"; Refresh(); } }
+    public void SkipCurrent() { if (CanSkip) { if (selectedOriginalControl is { } control) control.SkipCurrent(); else session.SkipCurrent(); currentDownload = false; retry = null; status = "Пропускаю файл…"; Refresh(); } }
     public string Error => error;
     public bool HasError => error.Length > 0;
     public bool HasIssues => Failures.Count > 0;
     public string IssuesText => $"Не скачано: {Failures.Count}. Открыть список";
     public string CurrentFile => file.Length == 0 ? (succeeded ? "Готово" : "—") : file;
     public string FileHeading => verifying ? "Проверка файла" : "Текущий файл";
-    public double TotalFraction => total > 0 ? Math.Clamp((double)(completed + (verifying ? 0 : current)) / total, 0, 1) : succeeded ? 1 : 0;
+    private long Transferred => preview.Length > 0 ? networkBytes : Math.Min(total, completed + (verifying ? 0 : current));
+    public double TotalFraction => total > 0 ? Math.Clamp((double)Transferred / total, 0, 1) : succeeded ? 1 : 0;
     public double FileFraction => currentSize > 0 ? Math.Clamp((double)current / currentSize, 0, 1) : 0;
     public string Percent => TotalFraction.ToString("P1", CultureInfo.GetCultureInfo("ru-RU"));
-    public string TotalBytesText => $"{Bytes(Math.Min(total, completed + (verifying ? 0 : current)))} из {Bytes(total)}";
-    public string FileBytesText => $"{Bytes(current)} из {Bytes(currentSize)}";
+    public string TotalBytesText => $"{(preview.Length > 0 ? "Получено " : "")}{Bytes(Transferred)} из {(preview.Length > 0 && running ? "≈ " : "")}{Bytes(total)}";
+    public string FileBytesText => $"{Bytes(current)} из {(preview.Length > 0 ? currentSize > 0 ? "≈ " + Bytes(currentSize) : "—" : Bytes(currentSize))}";
     public string DoneText => $"{done} из {count}";
     public string SkippedText => skipped.ToString(CultureInfo.CurrentCulture);
     public string RemainingText => Math.Max(0, count - done).ToString(CultureInfo.CurrentCulture);
     public string ErrorCountText => errors.ToString(CultureInfo.CurrentCulture);
     private double Speed => networkTime.Elapsed.TotalSeconds > 0 ? networkBytes / networkTime.Elapsed.TotalSeconds : 0;
     public string SpeedText => Speed > 0 && running ? Megabits(Speed) : "—";
-    public string EtaText => Speed > 0 && running ? Duration(Math.Max(0, total - completed - (verifying ? 0 : current)) / Speed) : "—";
+    public string EtaText => Speed > 0 && running ? Duration(Math.Max(0, total - Transferred) / Speed) : "—";
     public string FolderToOpen => resultFolder ?? destination;
 
-    public Task StartAsync()
+    public Task StartAsync() => StartAsync(null);
+
+    internal Task StartAsync(VideoSelection? selection)
     {
         dispatcher.VerifyAccess();
         if (running || !CanStart) return Task.CompletedTask;
-        activeTask = RunAsync();
+        activeTask = RunAsync(selection);
         return activeTask;
     }
 
-    private async Task RunAsync()
+    private async Task RunAsync(VideoSelection? selection)
     {
+        preview = selection?.Label ?? "";
+        selectedOriginalControl = selection?.Originals is null ? null : new DownloadControl();
         running = true; stopping = false; succeeded = false; verifying = false;
         error = ""; file = ""; resultFolder = null; status = "Подключаюсь к Яндекс Диску…";
         total = completed = current = currentSize = networkBytes = 0;
@@ -104,14 +115,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             awake = services.KeepAwake();
             var token = cancellation.Token;
-            var result = await Task.Run(() => session.RunAsync(destination, pendingEvents.Enqueue, token));
+            var result = await Task.Run(() => RunSelectionAsync(selection, token), token);
             DrainEvents();
             foreach (var failure in result.Failures) if (!reportedFailures.Contains(failure)) reportedFailures.Add(failure);
             succeeded = result.Succeeded;
             count = result.Files; done = result.Done; skipped = result.Skipped; completed = result.CompletedBytes;
             current = currentSize = 0; file = ""; verifying = false;
             RebuildFailures(result.Succeeded ? "" : "Файл не скачан. Повторите загрузку.");
-            if (result.Succeeded)
+            if (preview.Length > 0)
+            {
+                total = networkBytes;
+                status = $"Сохранено: {done} из {count} · {preview}.";
+            }
+            else if (result.Succeeded)
                 status = result.Files == 0 ? "Папка пуста — структура сохранена" : result.SizeOnlyFiles > 0
                     ? $"Все файлы на месте. {result.SizeOnlyFiles} — проверены только по размеру: сервер не отдал хеш."
                     : "Все файлы скачаны и проверены";
@@ -120,7 +136,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (OperationCanceledException)
         {
             DrainEvents();
-            status = "Остановлено. Готовые файлы и частичная загрузка сохранены.";
+            status = preview.Length == 0 ? "Остановлено. Готовые файлы и частичная загрузка сохранены."
+                : $"Остановлено. Сохранено: {done} из {count}.";
             RebuildFailures("Не скачано: загрузка остановлена.");
         }
         catch (Exception failure)
@@ -138,10 +155,67 @@ public sealed class MainViewModel : INotifyPropertyChanged
             {
                 timer.Stop(); networkTime.Stop();
                 cancellation.Dispose(); cancellation = null;
-                running = false; stopping = false; currentDownload = false; retry = null; errors = Failures.Count;
+                running = false; stopping = false; currentDownload = false; selectedOriginalControl = null; retry = null; errors = Failures.Count;
                 Refresh();
             }
         }
+    }
+
+    private async Task<DownloadResult> RunSelectionAsync(VideoSelection? selection, CancellationToken token)
+    {
+        if (selection is null) return await session.RunAsync(destination, pendingEvents.Enqueue, token);
+        if (selection.Originals is { } originals)
+        {
+            using var api = new DiskApi(Link);
+            using var downloader = new FileDownloader();
+            return await new DownloadEngine(api, downloader, control: selectedOriginalControl, selectedPaths: originals)
+                .RunAsync(destination, pendingEvents.Enqueue, token);
+        }
+
+        using var client = new VideoPreviewClient();
+        var jobs = selection.Previews;
+        var failures = new List<FileFailure>();
+        var remaining = jobs.Sum(item => item.Rendition.EstimatedBytes ?? 0);
+        var received = 0L;
+        var completedBytes = 0L;
+        var saved = 0;
+        pendingEvents.Enqueue(new DestinationSelected(destination));
+        pendingEvents.Enqueue(new InventoryFound(jobs.Count, remaining));
+        foreach (var (file, rendition) in jobs)
+            pendingEvents.Enqueue(new FileDiscovered(file.RemotePath, $"{file.Name} · {rendition.Height}p", rendition.EstimatedBytes ?? 0));
+        foreach (var (file, rendition) in jobs)
+        {
+            token.ThrowIfCancellationRequested();
+            var estimate = rendition.EstimatedBytes ?? 0;
+            remaining -= estimate;
+            var fileBytes = 0L;
+            var format = selection.AudioOnly ? "M4A" : selection.Ffmpeg is null ? "MPEG-TS" : "MP4";
+            pendingEvents.Enqueue(new StatusChanged($"Скачиваю {rendition.Height}p → {format} · {file.Name}"));
+            pendingEvents.Enqueue(new FileStarted(file.RemotePath, estimate, false));
+            try
+            {
+                await client.SaveAsync(file, rendition, destination, selection.AudioOnly, selection.Ffmpeg, (current, delta) =>
+                {
+                    fileBytes = current;
+                    received += delta;
+                    pendingEvents.Enqueue(new TransferProgress(current, delta));
+                    if (current > estimate)
+                        pendingEvents.Enqueue(new InventoryFound(jobs.Count, received + remaining));
+                }, token);
+                completedBytes += fileBytes;
+                saved++;
+                pendingEvents.Enqueue(new FileCompleted(file.RemotePath));
+            }
+            catch (Exception error) when (!token.IsCancellationRequested)
+            {
+                var failure = new FileFailure(file.RemotePath, error is LoaderException ? error.Message : "Проверьте доступ к сети и папке.");
+                failures.Add(failure);
+                pendingEvents.Enqueue(new FileFailed(failure));
+            }
+            pendingEvents.Enqueue(new InventoryFound(jobs.Count, received + remaining));
+            pendingEvents.Enqueue(new TotalsChanged(saved, 0, completedBytes, failures.Count));
+        }
+        return new DownloadResult(jobs.Count, saved, 0, completedBytes, 0, failures);
     }
 
     public void Stop()
@@ -161,7 +235,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public void SetDestination(string value)
     {
         if (running || destination == value) return;
-        destination = value; resultFolder = null;
+        destination = value; resultFolder = null; preview = "";
         session.ResetResult();
         total = completed = current = currentSize = networkBytes = 0;
         count = done = skipped = errors = 0; succeeded = verifying = false; file = error = "";
