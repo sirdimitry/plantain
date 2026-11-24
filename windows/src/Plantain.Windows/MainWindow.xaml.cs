@@ -27,6 +27,8 @@ public partial class MainWindow : Window
         this.updateChecker = updateChecker;
         this.installedVersion = installedVersion ?? typeof(MainWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion.Split('+')[0];
         InitializeComponent(); DataContext = model;
+        InstalledVersionLabel.Text = this.installedVersion;
+        System.Windows.Automation.AutomationProperties.SetName(InstalledVersionLabel, "Версия " + this.installedVersion);
         MinHeight = Math.Min(MinHeight, SystemParameters.WorkArea.Height);
         MinWidth = Math.Min(MinWidth, SystemParameters.WorkArea.Width);
         Width = Math.Min(Width, SystemParameters.WorkArea.Width);

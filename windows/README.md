@@ -12,7 +12,7 @@
 
 **Скачайте и попробуйте — Подорожник уже работает и готов помочь с загрузками.** Если выручил или просто понравился — [поставьте ⭐ репозиторию](https://github.com/sirdimitry/plantain). Вам один клик, автору приятно!
 
-Есть [стабильная версия для macOS 1.2.0](https://github.com/sirdimitry/plantain/blob/main/README.md): [скачать DMG](https://github.com/sirdimitry/plantain/releases/tag/v1.2.0). Код macOS находится в `main`, Windows — в отдельной ветке `windows` того же репозитория.
+Есть [стабильная версия для macOS 1.2.1](https://github.com/sirdimitry/plantain/blob/main/README.md): [скачать DMG](https://github.com/sirdimitry/plantain/releases/tag/v1.2.1). Код macOS находится в `main`, Windows — в отдельной ветке `windows` того же репозитория.
 
 ## Скриншот приложения
 

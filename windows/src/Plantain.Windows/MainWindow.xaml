@@ -32,7 +32,10 @@
      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
      <Image Source="Assets/AppIcon.png" Width="54" Height="54" Margin="0,0,14,0" AutomationProperties.Name="Подорожник"/>
      <StackPanel Grid.Column="1" VerticalAlignment="Center">
-      <TextBlock Text="Подорожник" FontSize="26" FontWeight="SemiBold"/>
+      <StackPanel Orientation="Horizontal">
+       <TextBlock Text="Подорожник" FontSize="26" FontWeight="SemiBold"/>
+       <TextBlock x:Name="InstalledVersionLabel" Style="{StaticResource Muted}" FontSize="10" Margin="8,0,0,4" VerticalAlignment="Bottom"/>
+      </StackPanel>
       <TextBlock Text="скачает, когда Диск не может" Style="{StaticResource Muted}" Margin="0,3,0,0"/>
      </StackPanel>
      <Button Grid.Column="2" Content="О программе" Click="About" Padding="10,6" FontSize="12"/>
