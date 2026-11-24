@@ -53,13 +53,27 @@ public sealed class VideoPreviewClient : IDisposable
             async (candidate, ct) =>
             {
                 var original = OptionalAsync(() => api.DownloadUrlAsync(candidate.Path, ct), ct);
-                var checkedRenditions = OptionalAsync(() => RenditionsAsync(candidate.Page, candidate.Path, ct), ct);
-                var renditions = await checkedRenditions.ConfigureAwait(false) ?? [];
+                var renditions = await FindRenditionsAsync(candidate.Page, candidate.Path, ct).ConfigureAwait(false);
                 result.Add(new(candidate.Path == "/" ? candidate.Item.Name : candidate.Path[1..],
                     candidate.Path, await original.ConfigureAwait(false) is null ? null : candidate.Item.Size, renditions));
                 progress?.Report((Interlocked.Increment(ref completed), candidates.Count));
             }).ConfigureAwait(false);
         return result.OrderBy(file => file.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
+    }
+
+    private async Task<IReadOnlyList<VideoRendition>> FindRenditionsAsync(Uri page, string path, CancellationToken token)
+    {
+        // A failed metadata or playlist request can look like a video with no preview.
+        // Retry only those files and stagger requests so parallel checks do not repeat in bursts.
+        for (var attempt = 0; ; attempt++)
+        {
+            var renditions = await OptionalAsync(() => RenditionsAsync(page, path, token), token)
+                .ConfigureAwait(false);
+            if (renditions is { Count: > 0 } || attempt == 2) return renditions ?? [];
+
+            var delay = TimeSpan.FromMilliseconds(2000 * (attempt + 1) + Random.Shared.Next(1000));
+            await Task.Delay(delay, token).ConfigureAwait(false);
+        }
     }
 
     private static async Task<T?> OptionalAsync<T>(Func<Task<T>> operation, CancellationToken token) where T : class
