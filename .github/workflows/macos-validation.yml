@@ -16,7 +16,7 @@ jobs:
         run: |
           bash scripts/test.sh
           bash scripts/build.sh --dmg
-          lipo -verify_arch arm64 x86_64 dist/Plantain.app/Contents/MacOS/ffmpeg
+          lipo dist/Plantain.app/Contents/MacOS/ffmpeg -verify_arch arm64 x86_64
       - name: Verify audio encoding from a pipe
         run: |
           command -v ffmpeg >/dev/null || brew install ffmpeg
