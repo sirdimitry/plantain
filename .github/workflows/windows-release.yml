@@ -1,0 +1,109 @@
+name: Release Windows
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: plantain-windows-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || (startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease)
+    runs-on: windows-2025
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MAC_RELEASE_TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: windows
+      - name: Match the published macOS version
+        id: version
+        run: |
+          $tag = $env:MAC_RELEASE_TAG
+          if (!$tag) { $tag = gh release view --repo $env:GITHUB_REPOSITORY --json tagName --jq .tagName }
+          if ($tag -cnotmatch '^v(\d+\.\d+\.\d+)$') { throw "Invalid macOS tag: $tag" }
+          $version = $Matches[1]
+          $mac = gh release view $tag --repo $env:GITHUB_REPOSITORY --json isDraft,isPrerelease,assets | ConvertFrom-Json
+          if (!$mac -or $mac.isDraft -or $mac.isPrerelease -or !($mac.assets.name -like '*.dmg')) { throw "Missing published macOS DMG: $tag" }
+          $manifest = gh api "repos/$env:GITHUB_REPOSITORY/contents/VERSION?ref=$tag" --jq .content
+          $manifestVersion = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($manifest)).Trim()
+          if ($manifestVersion -ne $version) { throw "macOS tag and VERSION disagree: $tag / $manifestVersion" }
+          $releases = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.draft == false) | .tag_name'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot list previous releases' }
+          if ($releases -contains "windows-v$version") {
+              "build=false" >> $env:GITHUB_OUTPUT
+              exit 0
+          }
+          $previousVersion = (Get-Content windows/VERSION -Raw).Trim().Split('-')[0]
+          if ([version]$version -lt [version]$previousVersion) { throw "Windows already uses version $previousVersion" }
+          if ((Get-Content windows/VERSION -Raw).Trim() -ne $version) {
+              Set-Content windows/VERSION $version -Encoding utf8NoBOM
+              git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -am "Sync Windows version with macOS $version"
+              if ($LASTEXITCODE -ne 0) { throw 'Cannot record Windows version' }
+          }
+          "build=true" >> $env:GITHUB_OUTPUT
+          "number=$version" >> $env:GITHUB_OUTPUT
+      - uses: actions/setup-dotnet@v4
+        if: steps.version.outputs.build == 'true'
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build and test Windows release
+        if: steps.version.outputs.build == 'true'
+        env:
+          PLANTAIN_RELEASE_VERSION: ${{ steps.version.outputs.number }}
+        run: |
+          $inno = Join-Path $env:RUNNER_TEMP 'innosetup.exe'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_1/innosetup-7.1.1-x64.exe' -OutFile $inno
+          if ((Get-FileHash $inno).Hash -ne '8a5a6711c3766a6e5fb74f280ba0e3551e719ce94538d901fdbd1f8f9920b3f0' -or (Get-AuthenticodeSignature $inno).Status -ne 'Valid') { throw 'Unexpected Inno Setup binary' }
+          $dir = Join-Path $env:RUNNER_TEMP 'Inno'
+          $arguments = @('/CURRENTUSER','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR="'+$dir+'"'))
+          if ((Start-Process $inno -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru).ExitCode -ne 0) { throw 'Inno Setup install failed' }
+          ./windows/scripts/test.ps1
+          ./windows/scripts/test-ui.ps1
+          ./windows/scripts/publish.ps1
+          ./windows/scripts/installer.ps1 -Iscc (Join-Path $dir 'ISCC.exe')
+          $previous = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.draft == false and (.tag_name | startswith("windows-v"))) | .assets[] | select(.name | endswith("-Setup.exe")) | .name' | Select-Object -First 1
+          if (!$previous -or $previous -cnotmatch '^Plantain-(\d+\.\d+\.\d+(?:-dev\.\d+)?)-win-x64-Setup\.exe$') { throw 'No supported previous Windows installer found' }
+          $previousTag = "windows-v$($Matches[1])"
+          gh release download $previousTag --repo $env:GITHUB_REPOSITORY --dir $env:RUNNER_TEMP --pattern "$previous*"
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot download the previous installer' }
+          $old = Join-Path $env:RUNNER_TEMP $previous
+          if ((Get-FileHash $old).Hash -ne ((Get-Content "$old.sha256").Split(' ')[0])) { throw 'Previous installer checksum mismatch' }
+          $revision = git rev-parse --short=12 HEAD
+          $base = "Plantain-$env:PLANTAIN_RELEASE_VERSION-win-x64"
+          $packages = "windows/artifacts/packages/$revision"
+          $portable = Join-Path $env:RUNNER_TEMP 'portable'
+          Expand-Archive "$packages/$base.zip" $portable
+          $exe = Get-Item "$portable/$base/Plantain.Windows.exe"
+          if (!$exe.VersionInfo.ProductVersion.StartsWith("$env:PLANTAIN_RELEASE_VERSION+", [StringComparison]::Ordinal)) { throw 'Portable version mismatch' }
+          $app = Start-Process $exe.FullName -PassThru
+          try {
+              if (!$app.WaitForInputIdle(30000)) { throw 'Portable startup timed out' }
+              $deadline = [DateTime]::UtcNow.AddSeconds(15)
+              do { Start-Sleep -Milliseconds 200; $app.Refresh() } while (!$app.HasExited -and !$app.MainWindowHandle -and [DateTime]::UtcNow -lt $deadline)
+              if ($app.HasExited -or !$app.MainWindowHandle) { throw 'Portable window did not open' }
+          } finally {
+              if (!$app.HasExited) {
+                  $app.CloseMainWindow() | Out-Null
+                  if (!$app.WaitForExit(10000)) { $app.Kill(); throw 'Portable did not close' }
+              }
+          }
+          $package = "$packages/$base-Setup.exe"
+          ./windows/scripts/test-installer.ps1 -Setup $package -PreviousSetup $old
+      - name: Publish verified Windows release
+        if: steps.version.outputs.build == 'true'
+        run: |
+          git push origin HEAD:windows
+          if ($LASTEXITCODE -ne 0) { throw 'The Windows branch moved during the build. Rerun from its updated head.' }
+          ./windows/scripts/release.ps1 -Publish
