@@ -18,7 +18,10 @@ enum VideoChoice: Hashable {
         switch self {
         case .original: return nil
         case .video(let height): return file.variants.first { $0.height == height }
-        case .audio: return file.variants.first
+        case .audio:
+            return file.variants.min { left, right in
+                (left.estimatedBytes ?? Int64.max, left.height) < (right.estimatedBytes ?? Int64.max, right.height)
+            }
         }
     }
 
