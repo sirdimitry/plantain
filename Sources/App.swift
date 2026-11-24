@@ -218,7 +218,15 @@ struct ContentView: View {
                         .frame(width: 54, height: 54).accessibilityHidden(true)
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Подорожник").font(.system(size: 22, weight: .semibold))
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
+                        Text("Подорожник").font(.system(size: 22, weight: .semibold))
+                        if !MacUpdates.installedVersion.isEmpty {
+                            Text(MacUpdates.installedVersion)
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                                .accessibilityLabel("Версия " + MacUpdates.installedVersion)
+                        }
+                    }
                     Text("скачает, когда Диск не может").font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer()
