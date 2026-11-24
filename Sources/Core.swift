@@ -13,9 +13,11 @@ struct RemoteItem: Decodable {
     let md5: String?
     let sha256: String?
     let embedded: Listing?
+    var mediaType: String? = nil
     enum CodingKeys: String, CodingKey {
         case name, type, size, md5, sha256
         case embedded = "_embedded"
+        case mediaType = "media_type"
     }
 }
 struct Listing: Decodable { let items: [RemoteItem]; let total: Int? }
@@ -347,6 +349,7 @@ struct DownloadEngine {
     let api: any DiskClient
     let destination: URL
     let report: Reporter
+    var selectedPaths: Set<String>? = nil
     private let fm = FileManager.default
 
     func run() async throws {
@@ -360,6 +363,9 @@ struct DownloadEngine {
         var pending = [("/", target, root)]
         while let (remote, local, item) = pending.popLast() {
             try Task.checkCancellation()
+            if let selectedPaths,
+               item.type == "dir" ? !selectedPaths.contains(where: { $0.hasPrefix(remote == "/" ? "/" : remote + "/") })
+                                  : !selectedPaths.contains(remote) { continue }
             if item.type == "dir" {
                 try fm.createDirectory(at: local, withIntermediateDirectories: true)
                 report(.status("Собираю список · найдено файлов: \(files.count)"))

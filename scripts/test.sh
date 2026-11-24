@@ -8,7 +8,7 @@ TEST_PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0
 export TEST_PORT
 mkdir -p build/tests
 swiftc -swift-version 5 -parse-as-library -O -module-cache-path build/tests/cache \
-  Sources/Core.swift Sources/Privacy.swift Tests/CoreTests.swift -o build/tests/CoreTests
+  Sources/Core.swift Sources/Privacy.swift Sources/MacUpdates.swift Tests/CoreTests.swift -o build/tests/CoreTests
 python3 Tests/server.py &
 TEST_SERVER_PID=$!
 trap 'kill "$TEST_SERVER_PID" 2>/dev/null || true' EXIT

@@ -54,12 +54,10 @@ func timeText(_ seconds: Double) -> String {
     var eta: String { speed > 0 ? timeText(Double(max(0, total-totalValue)) / speed) : "—" }
     var canStart: Bool { !running && !link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
-    func start() {
+    func start(selectedPaths: Set<String>? = nil) {
         guard !running else { return }
         let source = link.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: source), url.scheme == "https", url.user == nil, url.password == nil,
-              url.port == nil || url.port == 443,
-              ["disk.yandex.ru", "disk.yandex.com", "disk.yandex.com.tr", "yadi.sk"].contains(url.host ?? "") else {
+        guard let url = URL(string: source), isPublicDiskURL(url) else {
             error = "Нужна публичная ссылка Яндекс Диска, начинающаяся с https://disk.yandex.ru/"
             return
         }
@@ -82,7 +80,8 @@ func timeText(_ seconds: Double) -> String {
         }
         task = Task.detached(priority: .userInitiated) { [weak self] in
             do {
-                let engine = DownloadEngine(api: DiskAPI(link: source), destination: destination, report: reporter)
+                let engine = DownloadEngine(api: DiskAPI(link: source), destination: destination, report: reporter,
+                                            selectedPaths: selectedPaths)
                 try await engine.run()
                 await self?.end(cancelled: false, failure: nil)
             } catch {
@@ -206,6 +205,10 @@ struct Detail: View {
 struct ContentView: View {
     @StateObject private var model = LoaderModel()
     @FocusState private var linkFocused: Bool
+    @State private var showingVideoOptions = false
+    @State private var checkedUpdates = false
+    @State private var pendingUpdate: MacUpdate?
+    @State private var updateToShow: MacUpdate?
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 12) {
@@ -329,8 +332,10 @@ struct ContentView: View {
                         .controlSize(.large).disabled(model.stopping)
                         .keyboardShortcut(".", modifiers: .command)
                 } else {
+                    Button("Качество видео…") { showingVideoOptions = true }
+                        .controlSize(.large).disabled(!model.canStart)
                     Button { model.start() } label: {
-                        Label(model.finished || model.done > 0 ? "Продолжить" : "Скачать", systemImage: "arrow.down")
+                        Label(model.finished || model.done > 0 ? "Продолжить" : "Скачать исходники", systemImage: "arrow.down")
                             .frame(minWidth: 100)
                     }
                     .buttonStyle(.borderedProminent).tint(accent).controlSize(.large)
@@ -342,7 +347,27 @@ struct ContentView: View {
         .frame(width: 580)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { linkFocused = true }
+        .task {
+            guard !checkedUpdates else { return }
+            checkedUpdates = true
+            pendingUpdate = await MacUpdates.check()
+            presentPendingUpdate()
+        }
+        .onChange(of: model.running) { _ in presentPendingUpdate() }
+        .sheet(item: $updateToShow) { MacUpdateView(update: $0) }
+        .sheet(isPresented: $showingVideoOptions, onDismiss: presentPendingUpdate) {
+            VideoOptionsView(source: model.link.trimmingCharacters(in: .whitespacesAndNewlines),
+                             destination: model.destination) { paths in
+                showingVideoOptions = false
+                model.start(selectedPaths: paths)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.stop() }
+    }
+    private func presentPendingUpdate() {
+        guard !model.running, !showingVideoOptions, let pendingUpdate else { return }
+        self.pendingUpdate = nil
+        updateToShow = pendingUpdate
     }
 }
 
