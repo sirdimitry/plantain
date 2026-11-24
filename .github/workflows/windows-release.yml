@@ -4,6 +4,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      validate_only:
+        description: Build and test Windows without publishing
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -13,8 +18,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  ffmpeg:
     if: github.event_name == 'workflow_dispatch' || (startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      revision: ${{ steps.checkout.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        id: checkout
+        with:
+          ref: windows
+          persist-credentials: false
+      - name: Build FFmpeg for Windows
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64 ffmpeg
+          bash windows/scripts/build-ffmpeg.sh "$RUNNER_TEMP/ffmpeg"
+          ffmpeg -nostdin -loglevel error -f lavfi -i testsrc2=size=320x240:rate=10 -f lavfi -i sine -t 1 -c:v libx264 -c:a aac -f mpegts "$RUNNER_TEMP/ffmpeg/test.ts"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-ffmpeg
+          path: ${{ runner.temp }}/ffmpeg/
+          if-no-files-found: error
+  release:
+    needs: ffmpeg
     runs-on: windows-2025
     timeout-minutes: 30
     defaults:
@@ -23,10 +52,11 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       MAC_RELEASE_TAG: ${{ github.event.release.tag_name }}
+      VALIDATE_ONLY: ${{ inputs.validate_only }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: windows
+          ref: ${{ needs.ffmpeg.outputs.revision }}
       - name: Match the published macOS version
         id: version
         run: |
@@ -41,7 +71,7 @@ jobs:
           if ($manifestVersion -ne $version) { throw "macOS tag and VERSION disagree: $tag / $manifestVersion" }
           $releases = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.draft == false) | .tag_name'
           if ($LASTEXITCODE -ne 0) { throw 'Cannot list previous releases' }
-          if ($releases -contains "windows-v$version") {
+          if ($env:VALIDATE_ONLY -ne 'true' -and $releases -contains "windows-v$version") {
               "build=false" >> $env:GITHUB_OUTPUT
               exit 0
           }
@@ -58,6 +88,11 @@ jobs:
         if: steps.version.outputs.build == 'true'
         with:
           dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@v4
+        if: steps.version.outputs.build == 'true'
+        with:
+          name: windows-ffmpeg
+          path: ${{ runner.temp }}/ffmpeg
       - name: Build and test Windows release
         if: steps.version.outputs.build == 'true'
         env:
@@ -71,9 +106,10 @@ jobs:
           if ((Start-Process $inno -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru).ExitCode -ne 0) { throw 'Inno Setup install failed' }
           ./windows/scripts/test.ps1
           ./windows/scripts/test-ui.ps1
-          ./windows/scripts/publish.ps1
-          ./windows/scripts/installer.ps1 -Iscc (Join-Path $dir 'ISCC.exe')
-          $previous = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.draft == false and (.tag_name | startswith("windows-v"))) | .assets[] | select(.name | endswith("-Setup.exe")) | .name' | Select-Object -First 1
+          $ffmpegPackage = Join-Path $env:RUNNER_TEMP 'ffmpeg'
+          ./windows/scripts/publish.ps1 -FfmpegPackage $ffmpegPackage
+          ./windows/scripts/installer.ps1 -Iscc (Join-Path $dir 'ISCC.exe') -FfmpegPackage $ffmpegPackage
+          $previous = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.draft == false and (.tag_name | startswith("windows-v"))) | .assets[] | select(.name | endswith("-Setup.exe")) | .name' | Where-Object { $_ -ne "Plantain-$env:PLANTAIN_RELEASE_VERSION-win-x64-Setup.exe" } | Select-Object -First 1
           if (!$previous -or $previous -cnotmatch '^Plantain-(\d+\.\d+\.\d+(?:-dev\.\d+)?)-win-x64-Setup\.exe$') { throw 'No supported previous Windows installer found' }
           $previousTag = "windows-v$($Matches[1])"
           gh release download $previousTag --repo $env:GITHUB_REPOSITORY --dir $env:RUNNER_TEMP --pattern "$previous*"
@@ -87,6 +123,14 @@ jobs:
           Expand-Archive "$packages/$base.zip" $portable
           $exe = Get-Item "$portable/$base/Plantain.Windows.exe"
           if (!$exe.VersionInfo.ProductVersion.StartsWith("$env:PLANTAIN_RELEASE_VERSION+", [StringComparison]::Ordinal)) { throw 'Portable version mismatch' }
+          $tool = Join-Path $portable "$base/ffmpeg/ffmpeg.exe"
+          foreach ($mode in 'm4a','mp4') {
+              $maps = if ($mode -eq 'm4a') { @('-map','0:a:0') } else { @('-map','0:v:0','-map','0:a:0?') }
+              $arguments = @('-nostdin','-loglevel','error','-protocol_whitelist','pipe','-f','mpegts','-i','pipe:0') + $maps + @('-c','copy','-bsf:a','aac_adtstoasc','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1')
+              $output = Join-Path $env:RUNNER_TEMP "preview.$mode"
+              $result = Start-Process $tool -ArgumentList $arguments -RedirectStandardInput (Join-Path $ffmpegPackage 'test.ts') -RedirectStandardOutput $output -WindowStyle Hidden -PassThru -Wait
+              if ($result.ExitCode -ne 0 -or (Get-Item $output).Length -lt 100) { throw "Bundled FFmpeg could not save $mode" }
+          }
           $app = Start-Process $exe.FullName -PassThru
           try {
               if (!$app.WaitForInputIdle(30000)) { throw 'Portable startup timed out' }
@@ -102,7 +146,7 @@ jobs:
           $package = "$packages/$base-Setup.exe"
           ./windows/scripts/test-installer.ps1 -Setup $package -PreviousSetup $old
       - name: Publish verified Windows release
-        if: steps.version.outputs.build == 'true'
+        if: steps.version.outputs.build == 'true' && !inputs.validate_only
         run: |
           git push origin HEAD:windows
           if ($LASTEXITCODE -ne 0) { throw 'The Windows branch moved during the build. Rerun from its updated head.' }
