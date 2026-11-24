@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 private let publicDiskHosts: Set<String> = [
     "disk.yandex.ru", "disk.yandex.com", "disk.yandex.com.tr", "disk.360.yandex.ru", "yadi.sk"
@@ -237,8 +238,77 @@ final class VideoPreviewClient: @unchecked Sendable {
     }
 
     static var ffmpeg: URL? {
-        ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/local/bin/ffmpeg"]
+        let bundled = Bundle.main.url(forAuxiliaryExecutable: "ffmpeg")?.path
+        return ([bundled].compactMap { $0 } + ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/local/bin/ffmpeg"])
             .first(where: FileManager.default.isExecutableFile(atPath:)).map { URL(fileURLWithPath: $0) }
+    }
+
+    private func saveAudio(_ segments: [URL], encoder: URL, result: URL,
+                           progress: @Sendable (Int64, Int64) -> Void) async throws -> Int64 {
+        guard FileManager.default.createFile(atPath: result.path, contents: nil) else {
+            throw LoaderError("Не удалось создать временный файл MP3.")
+        }
+        let output = try FileHandle(forWritingTo: result)
+        defer { try? output.close() }
+        let pipe = Pipe()
+        let input = pipe.fileHandleForWriting
+        guard fcntl(input.fileDescriptor, F_SETNOSIGPIPE, 1) != -1 else {
+            throw LoaderError("Не удалось открыть поток для кодирования MP3.")
+        }
+        let process = Process()
+        process.executableURL = encoder
+        process.arguments = ["-nostdin", "-loglevel", "error", "-protocol_whitelist", "pipe",
+                             "-f", "mpegts", "-i", "pipe:0", "-map", "0:a:0",
+                             "-c:a", "libmp3lame", "-q:a", "2", "-f", "mp3", "pipe:1"]
+        process.standardInput = pipe
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        try Task.checkCancellation()
+        try process.run()
+        defer {
+            try? input.close()
+            if process.isRunning {
+                process.terminate()
+                process.waitUntilExit()
+            }
+        }
+
+        var received: Int64 = 0
+        for (index, segment) in segments.enumerated() {
+            let (bytes, response) = try await session.bytes(from: segment)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                throw LoaderError("Не удалось загрузить сегмент \(index + 1).")
+            }
+            var chunk = Data()
+            chunk.reserveCapacity(64 * 1024)
+            var length: Int64 = 0
+            for try await byte in bytes {
+                chunk.append(byte)
+                length += 1
+                if chunk.count == 64 * 1024 {
+                    try Task.checkCancellation()
+                    try input.write(contentsOf: chunk)
+                    received += Int64(chunk.count)
+                    progress(received, Int64(chunk.count))
+                    chunk.removeAll(keepingCapacity: true)
+                }
+            }
+            guard length > 0, http.expectedContentLength < 0 || length == http.expectedContentLength else {
+                throw LoaderError("Не удалось загрузить сегмент \(index + 1).")
+            }
+            if !chunk.isEmpty {
+                try Task.checkCancellation()
+                try input.write(contentsOf: chunk)
+                received += Int64(chunk.count)
+                progress(received, Int64(chunk.count))
+            }
+        }
+        try input.close()
+        while process.isRunning { try await Task.sleep(nanoseconds: 100_000_000) }
+        guard process.terminationStatus == 0, fileSize(result) > 0 else {
+            throw LoaderError("Не удалось сохранить MP3.")
+        }
+        return received
     }
 
     private func segments(for variant: PreviewVariant) async throws -> [URL] {
@@ -269,59 +339,62 @@ final class VideoPreviewClient: @unchecked Sendable {
         try fm.createDirectory(at: staging, withIntermediateDirectories: false)
         defer { try? fm.removeItem(at: staging) }
         let transport = staging.appendingPathComponent("preview.ts")
-        guard fm.createFile(atPath: transport.path, contents: nil) else {
-            throw LoaderError("Не удалось создать временный файл превью.")
-        }
-        let output = try FileHandle(forWritingTo: transport)
+        let ext = audioOnly ? "mp3" : encoder == nil ? "ts" : "mp4"
+        let result = encoder == nil ? transport : staging.appendingPathComponent("ready." + ext)
         var received: Int64 = 0
-        do {
-            defer { try? output.close() }
-            // Download small batches concurrently and write them in playlist order.
-            for start in stride(from: 0, to: segments.count, by: 3) {
-                let indices = start..<min(start + 3, segments.count)
-                try await withThrowingTaskGroup(of: (Int, Int64).self) { group in
-                    for index in indices {
-                        let segment = segments[index]
-                        group.addTask {
-                            let (part, response) = try await self.session.download(from: segment)
-                            defer { try? fm.removeItem(at: part) }
-                            let length = fileSize(part)
-                            guard let http = response as? HTTPURLResponse, http.statusCode == 200, length > 0,
-                                  http.expectedContentLength < 0 || length == http.expectedContentLength else {
-                                throw LoaderError("Не удалось загрузить сегмент \(index + 1).")
+        if audioOnly, let encoder {
+            received = try await saveAudio(segments, encoder: encoder, result: result, progress: progress)
+        } else {
+            guard fm.createFile(atPath: transport.path, contents: nil) else {
+                throw LoaderError("Не удалось создать временный файл превью.")
+            }
+            let output = try FileHandle(forWritingTo: transport)
+            do {
+                defer { try? output.close() }
+                // Download small batches concurrently and write them in playlist order.
+                for start in stride(from: 0, to: segments.count, by: 3) {
+                    let indices = start..<min(start + 3, segments.count)
+                    try await withThrowingTaskGroup(of: (Int, Int64).self) { group in
+                        for index in indices {
+                            let segment = segments[index]
+                            group.addTask {
+                                let (part, response) = try await self.session.download(from: segment)
+                                defer { try? fm.removeItem(at: part) }
+                                let length = fileSize(part)
+                                guard let http = response as? HTTPURLResponse, http.statusCode == 200, length > 0,
+                                      http.expectedContentLength < 0 || length == http.expectedContentLength else {
+                                    throw LoaderError("Не удалось загрузить сегмент \(index + 1).")
+                                }
+                                let local = staging.appendingPathComponent("segment-\(index).ts")
+                                try fm.moveItem(at: part, to: local)
+                                return (index, length)
                             }
-                            let local = staging.appendingPathComponent("segment-\(index).ts")
-                            try fm.moveItem(at: part, to: local)
-                            return (index, length)
+                        }
+                        for try await (_, length) in group {
+                            received += length
+                            progress(received, length)
                         }
                     }
-                    for try await (_, length) in group {
-                        received += length
-                        progress(received, length)
+                    for index in indices {
+                        let local = staging.appendingPathComponent("segment-\(index).ts")
+                        let input = try FileHandle(forReadingFrom: local)
+                        defer { try? input.close(); try? fm.removeItem(at: local) }
+                        while let chunk = try input.read(upToCount: 1024 * 1024), !chunk.isEmpty {
+                            try Task.checkCancellation()
+                            try output.write(contentsOf: chunk)
+                        }
                     }
                 }
-                for index in indices {
-                    let local = staging.appendingPathComponent("segment-\(index).ts")
-                    let input = try FileHandle(forReadingFrom: local)
-                    defer { try? input.close(); try? fm.removeItem(at: local) }
-                    while let chunk = try input.read(upToCount: 1024 * 1024), !chunk.isEmpty {
-                        try Task.checkCancellation()
-                        try output.write(contentsOf: chunk)
-                    }
-                }
+                try output.synchronize()
             }
-            try output.synchronize()
         }
 
-        let ext = audioOnly ? "m4a" : encoder == nil ? "ts" : "mp4"
-        let result = encoder == nil ? transport : staging.appendingPathComponent("ready." + ext)
-        if let encoder {
+        if !audioOnly, let encoder {
             let process = Process()
             process.executableURL = encoder
             process.arguments = ["-nostdin", "-loglevel", "error", "-protocol_whitelist", "file",
-                                 "-f", "mpegts", "-i", transport.path] +
-                (audioOnly ? ["-map", "0:a:0"] : ["-map", "0:v:0", "-map", "0:a:0?"]) +
-                ["-c", "copy", "-movflags", "+faststart", result.path]
+                                 "-f", "mpegts", "-i", transport.path, "-map", "0:v:0", "-map", "0:a:0?",
+                                 "-c", "copy", "-movflags", "+faststart", result.path]
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
             try Task.checkCancellation()
@@ -334,7 +407,7 @@ final class VideoPreviewClient: @unchecked Sendable {
             }
             while process.isRunning { try await Task.sleep(nanoseconds: 100_000_000) }
             guard process.terminationStatus == 0, fileSize(result) > 0 else {
-                throw LoaderError(audioOnly ? "Не удалось извлечь звуковую дорожку." : "Не удалось сохранить MP4.")
+                throw LoaderError("Не удалось сохранить MP4.")
             }
         }
 

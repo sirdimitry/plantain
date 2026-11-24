@@ -35,6 +35,14 @@ swift -module-cache-path build/arm64/cache scripts/GenerateIcons.swift \
   Assets/AppIcon.png build/AppIcon.iconset "$APP/Contents/Resources/AppIcon.icns"
 cp Assets/AppIcon.png "$APP/Contents/Resources/AppArtwork.png"
 cp Assets/GitHub.png "$APP/Contents/Resources/GitHub.png"
+for TARGET in macos-arm64 macos-x64; do
+  bash scripts/build-media-tool.sh "$TARGET" "build/media/$TARGET"
+done
+lipo -create build/media/macos-arm64/ffmpeg build/media/macos-x64/ffmpeg -output "$APP/Contents/MacOS/ffmpeg"
+codesign --force --options runtime --sign - "$APP/Contents/MacOS/ffmpeg"
+mkdir -p "$APP/Contents/Resources/ffmpeg"
+cp build/media/macos-arm64/{COPYING.LGPLv2.1,COPYING.LAME,ffmpeg-9.1.tar.xz,lame_3.100.orig.tar.gz,build-media-tool.sh,BUILD.txt} "$APP/Contents/Resources/ffmpeg/"
+printf '%s\n' 'The auxiliary executable combines the macos-arm64 and macos-x64 builds using lipo.' >> "$APP/Contents/Resources/ffmpeg/BUILD.txt"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

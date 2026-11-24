@@ -78,7 +78,7 @@ enum VideoChoice: Hashable {
                                 Spacer()
                                 if choice.includes(file) {
                                     if choice == .audio, let variant = choice.variant(for: file) {
-                                        Text("\(variant.height)p → M4A").foregroundStyle(.secondary)
+                                        Text("\(variant.height)p → MP3").foregroundStyle(.secondary)
                                     } else if let size = choice.transferSize(for: file) {
                                         Text((choice == .original ? "" : "≈ ") + bytes(size))
                                             .foregroundStyle(.secondary)
@@ -91,7 +91,7 @@ enum VideoChoice: Hashable {
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.frame(maxHeight: 180)
                 if choice == .audio {
-                    Text("Размеры показывают трафик потока. Сохранится звуковая дорожка M4A.")
+                    Text("Размеры показывают трафик потока. Сохранится MP3.")
                         .font(.caption).foregroundStyle(.secondary)
                 } else if choice != .original {
                     Text(encoder == nil ? "Превью сохранится в формате MPEG-TS." : "Превью сохранится в MP4.")

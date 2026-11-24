@@ -1,0 +1,33 @@
+name: Validate macOS build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test and build the universal DMG
+        run: |
+          bash scripts/test.sh
+          bash scripts/build.sh --dmg
+          lipo -verify_arch arm64 x86_64 dist/Plantain.app/Contents/MacOS/ffmpeg
+      - name: Verify audio encoding from a pipe
+        run: |
+          command -v ffmpeg >/dev/null || brew install ffmpeg
+          ffmpeg -nostdin -loglevel error -f lavfi -i testsrc2=size=320x240:rate=10 -f lavfi -i sine -t 1 -c:v libx264 -c:a aac -f mpegts "$RUNNER_TEMP/test.ts"
+          tool=dist/Plantain.app/Contents/MacOS/ffmpeg
+          "$tool" -nostdin -loglevel error -protocol_whitelist pipe -f mpegts -i pipe:0 -map 0:a:0 -c:a libmp3lame -q:a 2 -f mp3 pipe:1 < "$RUNNER_TEMP/test.ts" > "$RUNNER_TEMP/audio.mp3"
+          test "$(ffprobe -v error -show_entries stream=codec_name -of csv=p=0 "$RUNNER_TEMP/audio.mp3")" = mp3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-validation-dmg
+          path: |
+            dist/*.dmg
+            dist/*.sha256
+          if-no-files-found: error

@@ -39,6 +39,7 @@ struct AboutView: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Ссылки и выбранная папка не запоминаются.")
+            Text("Лицензии и исходники FFmpeg и LAME находятся в папке Resources/ffmpeg приложения.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)

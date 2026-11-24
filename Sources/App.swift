@@ -88,7 +88,7 @@ func timeText(_ seconds: Double) -> String {
             report(.inventory(jobs.count, estimated))
             for (file, variant) in jobs {
                 try Task.checkCancellation()
-                let format = choice == .audio ? "M4A" : encoder == nil ? "MPEG-TS" : "MP4"
+                let format = choice == .audio ? "MP3" : encoder == nil ? "MPEG-TS" : "MP4"
                 report(.status("Скачиваю \(variant.height)p → \(format) · \(file.name)"))
                 report(.file("\(file.name) · \(variant.height)p", variant.estimatedBytes ?? 0, false))
                 do {

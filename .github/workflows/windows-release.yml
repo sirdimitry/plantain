@@ -35,7 +35,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-mingw-w64-x86-64 ffmpeg
-          bash windows/scripts/build-ffmpeg.sh "$RUNNER_TEMP/ffmpeg"
+          bash scripts/build-media-tool.sh windows-x64 "$RUNNER_TEMP/ffmpeg"
           ffmpeg -nostdin -loglevel error -f lavfi -i testsrc2=size=320x240:rate=10 -f lavfi -i sine -t 1 -c:v libx264 -c:a aac -f mpegts "$RUNNER_TEMP/ffmpeg/test.ts"
       - uses: actions/upload-artifact@v4
         with:
@@ -124,9 +124,13 @@ jobs:
           $exe = Get-Item "$portable/$base/Plantain.Windows.exe"
           if (!$exe.VersionInfo.ProductVersion.StartsWith("$env:PLANTAIN_RELEASE_VERSION+", [StringComparison]::Ordinal)) { throw 'Portable version mismatch' }
           $tool = Join-Path $portable "$base/ffmpeg/ffmpeg.exe"
-          foreach ($mode in 'm4a','mp4') {
-              $maps = if ($mode -eq 'm4a') { @('-map','0:a:0') } else { @('-map','0:v:0','-map','0:a:0?') }
-              $arguments = @('-nostdin','-loglevel','error','-protocol_whitelist','pipe','-f','mpegts','-i','pipe:0') + $maps + @('-c','copy','-bsf:a','aac_adtstoasc','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1')
+          foreach ($mode in 'mp3','mp4') {
+              $encode = if ($mode -eq 'mp3') {
+                  @('-map','0:a:0','-c:a','libmp3lame','-q:a','2','-f','mp3','pipe:1')
+              } else {
+                  @('-map','0:v:0','-map','0:a:0?','-c','copy','-bsf:a','aac_adtstoasc','-movflags','+frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1')
+              }
+              $arguments = @('-nostdin','-loglevel','error','-protocol_whitelist','pipe','-f','mpegts','-i','pipe:0') + $encode
               $output = Join-Path $env:RUNNER_TEMP "preview.$mode"
               $result = Start-Process $tool -ArgumentList $arguments -RedirectStandardInput (Join-Path $ffmpegPackage 'test.ts') -RedirectStandardOutput $output -WindowStyle Hidden -PassThru -Wait
               if ($result.ExitCode -ne 0 -or (Get-Item $output).Length -lt 100) { throw "Bundled FFmpeg could not save $mode" }
