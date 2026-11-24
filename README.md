@@ -18,9 +18,9 @@
 
 Версия для Windows написана на **C# / .NET** с интерфейсом **WPF**, созданным для настольных приложений Windows.
 
-**[Скачать для Windows — ZIP](https://github.com/sirdimitry/plantain/releases/tag/windows-v0.1.0-dev.10)** · [Установщик предыдущей версии](https://github.com/sirdimitry/plantain/releases/tag/windows-v0.1.0-dev.8) · [Страница Windows-версии: инструкция, скриншот и другие варианты загрузки](https://github.com/sirdimitry/plantain/blob/windows/windows/README.md)
+**[Скачать для Windows — ZIP dev.10](https://github.com/sirdimitry/plantain/releases/tag/windows-v0.1.0-dev.10)** · [Установщик dev.9](https://github.com/sirdimitry/plantain/releases/download/windows-v0.1.0-dev.9/Plantain-0.1.0-dev.9-win-x64-Setup.exe) · [Страница Windows-версии: инструкция, скриншот и другие варианты загрузки](https://github.com/sirdimitry/plantain/blob/windows/windows/README.md)
 
-Предыдущий Windows-выпуск проверен на Windows 11 x64. Для dev.10 выполнены кросс-сборка и сетевая проверка; проверка интерфейса на Windows ещё предстоит. Разработка Windows ведётся в отдельной ветке [`windows`](https://github.com/sirdimitry/plantain/tree/windows). Ниже — инструкция для macOS.
+Portable dev.10 запускается на Windows 11 x64. На этой системе прошли 124 проверки движка и 27 проверок WPF. Установщик dev.9 прошёл 21 проверку, включая обновление с dev.8 и удаление с сохранением скачанных файлов. Разработка Windows ведётся в отдельной ветке [`windows`](https://github.com/sirdimitry/plantain/tree/windows). Ниже — инструкция для macOS.
 
 **Скачайте и попробуйте — Подорожник уже работает и готов помочь с загрузками.** Если выручил или просто понравился — [поставьте ⭐ репозиторию](https://github.com/sirdimitry/plantain). Вам один клик, автору приятно!
 
