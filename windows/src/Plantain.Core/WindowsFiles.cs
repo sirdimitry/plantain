@@ -111,7 +111,11 @@ internal static class WindowsFiles
         }
     }
 
-    internal static void RemoveEmptyDirectory(SafeFileHandle handle)
+    internal static void RemoveTemporaryFile(FileStream file) => MarkForDeletion(file.SafeFileHandle);
+
+    internal static void RemoveEmptyDirectory(SafeFileHandle handle) => MarkForDeletion(handle);
+
+    private static void MarkForDeletion(SafeFileHandle handle)
     {
         var memory = Marshal.AllocHGlobal(1);
         try

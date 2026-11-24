@@ -258,7 +258,7 @@ internal static class Program
         {
             using var awake = new WindowsServices().KeepAwake(); return Task.CompletedTask;
         });
-        await Case("startup shows one blue update prompt and Later dismisses it", async () =>
+        await Case("startup shows both versions and Cancel dismisses the update prompt", async () =>
         {
             var model = Model(Successful(), out var services);
             var checker = new FakeUpdates(new(UpdateCheckStatus.Available, new("0.1.0-dev.7", new Uri("https://github.com/sirdimitry/plantain/releases/tag/windows-v0.1.0-dev.7"))));
@@ -267,7 +267,8 @@ internal static class Program
             {
                 await Until(() => window.OwnedWindows.OfType<UpdateWindow>().Any());
                 var popup = window.OwnedWindows.OfType<UpdateWindow>().Single();
-                Check(((TextBlock)popup.FindName("VersionLabel")).Text.Contains("0.1.0-dev.7"));
+                Check(((TextBlock)popup.FindName("NewVersionLabel")).Text.Contains("0.1.0-dev.7"));
+                Check(((TextBlock)popup.FindName("VersionLabel")).Text.Contains("0.1.0-dev.6"));
                 Save(popup, "update-notification.png", 1);
                 ((Button)popup.FindName("LaterButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 window.Activate(); await Flush(); Check(checker.Calls == 1 && !window.OwnedWindows.OfType<UpdateWindow>().Any());

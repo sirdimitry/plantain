@@ -16,9 +16,11 @@
     </StackPanel>
    </Button>
   <Grid Margin="0,14,0,0">
-   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <Button x:Name="OpenFolderButton" Content="Открыть папку" Click="OpenFolder" HorizontalAlignment="Left" ToolTip="Открыть папку сохранения (Ctrl+O)"/>
-   <Grid Grid.Column="1">
+   <Button Grid.Column="1" Content="Качество видео…" Click="VideoOptions" IsEnabled="{Binding CanStart}"
+    Visibility="{Binding CanEdit, Converter={StaticResource VisibleWhen}}" Margin="8,0" Padding="8,4"/>
+   <Grid Grid.Column="2">
     <Button x:Name="StartButton" Content="{Binding StartText}" IsEnabled="{Binding CanStart}" Visibility="{Binding CanEdit, Converter={StaticResource VisibleWhen}}" Click="Start" Style="{StaticResource Primary}" MinWidth="132" IsDefault="True"/>
     <Button x:Name="StopButton" Content="{Binding StopText}" IsEnabled="{Binding CanStop}" Visibility="{Binding IsRunning, Converter={StaticResource VisibleWhen}}" Click="Stop" MinWidth="132"/>
    </Grid>

@@ -17,7 +17,7 @@ public sealed class FilePublisher : IFilePublisher
 }
 
 public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, IRetryDelay? retryDelay = null,
-    IFilePublisher? filePublisher = null, DownloadControl? control = null)
+    IFilePublisher? filePublisher = null, DownloadControl? control = null, IReadOnlySet<string>? selectedPaths = null)
 {
     private readonly IRetryDelay delay = retryDelay ?? new RetryDelay();
     private readonly IFilePublisher publisher = filePublisher ?? new FilePublisher();
@@ -63,6 +63,8 @@ public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, 
             catch (OverflowException) { throw new FatalApiException("Суммарный размер файлов превышает поддерживаемый предел."); }
         }
 
+        if (root.Type == "file" && selectedPaths is not null && !selectedPaths.Contains("/"))
+            throw new FatalApiException("Выбранный файл больше недоступен.");
         Count(root, "/");
         string target;
         try
@@ -89,6 +91,8 @@ public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, 
                 cancellationToken.ThrowIfCancellationRequested();
                 ValidateItem(child);
                 var remote = (entry.Remote == "/" ? "" : entry.Remote) + "/" + child.Name;
+                if (selectedPaths is not null && (child.Type == "file" ? !selectedPaths.Contains(remote) :
+                    !selectedPaths.Any(path => path.StartsWith(remote + "/", StringComparison.Ordinal)))) continue;
                 Count(child, remote);
                 if (collisions.Contains(child.Name))
                 {
@@ -99,6 +103,8 @@ public sealed class DownloadEngine(IDiskClient api, IFileDownloader downloader, 
                 catch (LocalFileException error) { Fail(remote, error.Message, child.Type == "dir"); }
             }
         }
+        if (selectedPaths is not null && knownFiles != selectedPaths.Count)
+            throw new FatalApiException("Список файлов изменился. Проверьте ссылку заново.");
         files.Sort((a, b) => StringComparer.Ordinal.Compare(a.Remote, b.Remote));
         report(new InventoryFound(knownFiles, totalBytes));
         cancellationToken.ThrowIfCancellationRequested();

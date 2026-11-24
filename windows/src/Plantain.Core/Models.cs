@@ -8,7 +8,8 @@ public sealed record RemoteItem(
     [property: JsonPropertyName("size")] long? Size = null,
     [property: JsonPropertyName("md5")] string? Md5 = null,
     [property: JsonPropertyName("sha256")] string? Sha256 = null,
-    [property: JsonPropertyName("_embedded")] Listing? Embedded = null)
+    [property: JsonPropertyName("_embedded")] Listing? Embedded = null,
+    [property: JsonPropertyName("media_type")] string? MediaType = null)
 {
     [JsonIgnore] public bool HasHash => Sha256 is not null || Md5 is not null;
 }

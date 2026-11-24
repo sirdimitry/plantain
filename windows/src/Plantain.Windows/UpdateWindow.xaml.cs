@@ -14,7 +14,8 @@ public partial class UpdateWindow : Window
         this.update = update;
         this.open = open ?? (uri => Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }));
         InitializeComponent();
-        VersionLabel.Text = $"Установлена: {installed}\nНовая версия: {update.Version}";
+        NewVersionLabel.Text = $"Подорожник {update.Version}";
+        VersionLabel.Text = $"Установлена версия {installed}";
         var close = new RoutedCommand();
         CommandBindings.Add(new CommandBinding(close, (_, _) => Close()));
         InputBindings.Add(new KeyBinding(close, new KeyGesture(Key.Escape)));

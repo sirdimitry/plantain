@@ -3,18 +3,19 @@
  Title="Доступно обновление" Style="{StaticResource {x:Type Window}}" Width="480" SizeToContent="Height" ResizeMode="NoResize"
  ShowInTaskbar="False" ShowActivated="False" WindowStartupLocation="CenterOwner" Icon="Assets/AppIcon.png">
  <StackPanel>
-  <Border Background="#075CCC" Padding="24,20">
-   <StackPanel><TextBlock Text="Вышла новая версия" FontSize="24" FontWeight="SemiBold" Foreground="White"/>
-    <TextBlock Text="Подорожник для Windows" Foreground="White" Margin="0,6,0,0"/></StackPanel>
+  <Border Background="#BD1A36" Padding="24,21">
+   <StackPanel>
+    <TextBlock Text="Вышла новая версия" FontSize="20" FontWeight="SemiBold" Foreground="White"/>
+    <TextBlock x:Name="NewVersionLabel" FontSize="28" FontWeight="Bold" Foreground="White" Margin="0,5,0,0"/>
+   </StackPanel>
   </Border>
   <StackPanel Margin="24">
-   <TextBlock x:Name="VersionLabel" FontWeight="SemiBold" TextWrapping="Wrap"/>
-   <TextBlock Text="Хотите обновиться?" FontSize="18" Margin="0,14,0,8"/>
-   <TextBlock Text="Откроется Windows-релиз на GitHub. Скачайте установщик Setup.exe и закройте приложение перед установкой обновления. Если используете переносную версию, скачайте ZIP и распакуйте его в отдельную папку." TextWrapping="Wrap"/>
-   <Grid Margin="0,22,0,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-    <Button x:Name="LaterButton" Content="Позже" Click="Later" HorizontalAlignment="Left" IsCancel="True"/>
-    <Button x:Name="DownloadUpdateButton" Grid.Column="1" Content="Скачать обновление" Click="Download" Style="{StaticResource Primary}" IsDefault="True"/>
-   </Grid>
+   <TextBlock x:Name="VersionLabel" Style="{StaticResource Muted}" FontSize="12" TextWrapping="Wrap"/>
+   <TextBlock Text="Откроется страница релиза для Windows на GitHub." TextWrapping="Wrap" Margin="0,12,0,0"/>
+   <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+    <Button x:Name="LaterButton" Content="Отмена" Click="Later" IsCancel="True" MinWidth="90" Margin="0,0,8,0"/>
+    <Button x:Name="DownloadUpdateButton" Content="Скачать" Click="Download" Style="{StaticResource Primary}" IsDefault="True" MinWidth="100"/>
+   </StackPanel>
   </StackPanel>
  </StackPanel>
 </Window>

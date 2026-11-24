@@ -1,0 +1,35 @@
+<Window x:Class="Plantain.Windows.VideoOptionsWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="Качество видео" Style="{StaticResource {x:Type Window}}" Width="650" Height="510"
+ MinWidth="460" MinHeight="420" WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+ Loaded="Inspect" Closing="OnClosing">
+ <DockPanel Margin="24">
+  <StackPanel DockPanel.Dock="Top" Margin="0,0,0,14">
+   <TextBlock Text="Качество видео" FontSize="24" FontWeight="SemiBold"/>
+   <TextBlock Text="Вариант загрузки" Margin="0,12,0,4"/>
+   <ComboBox x:Name="Choices" DisplayMemberPath="Title" IsEnabled="False" SelectionChanged="ChoiceChanged"
+    AutomationProperties.Name="Вариант загрузки"/>
+   <TextBlock x:Name="FormatNote" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+  </StackPanel>
+  <StackPanel DockPanel.Dock="Bottom" Margin="0,14,0,0">
+   <ProgressBar x:Name="Progress" Height="6" Visibility="Collapsed" Margin="0,0,0,8"/>
+   <TextBlock x:Name="Status" Text="Проверяю ссылку и доступные потоки…" TextWrapping="Wrap"
+    AutomationProperties.LiveSetting="Polite" MaxHeight="72"/>
+   <DockPanel Margin="0,14,0,0" LastChildFill="False">
+    <Button x:Name="OpenButton" DockPanel.Dock="Left" Content="Открыть папку" Click="OpenFolder" Visibility="Collapsed"/>
+    <Button x:Name="DownloadButton" DockPanel.Dock="Right" Content="Скачать выбранное" Click="Download"
+     Style="{StaticResource Primary}" IsDefault="True" IsEnabled="False" Margin="8,0,0,0"/>
+    <Button x:Name="CloseButton" DockPanel.Dock="Right" Content="Закрыть" Click="CloseOrStop" MinWidth="105"/>
+   </DockPanel>
+  </StackPanel>
+  <ListView x:Name="Files" AutomationProperties.Name="Видео и размеры" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+   <ListView.View>
+    <GridView>
+     <GridViewColumn Header="Видео" DisplayMemberBinding="{Binding Name}" Width="360"/>
+     <GridViewColumn Header="Размер / статус" DisplayMemberBinding="{Binding Detail}" Width="175"/>
+    </GridView>
+   </ListView.View>
+  </ListView>
+ </DockPanel>
+</Window>

@@ -50,6 +50,10 @@ public partial class MainWindow : Window
     }
 
     private async void Start(object sender, RoutedEventArgs e) { await Model.StartAsync(); if (Model.Link.Length == 0) LinkBox.Focus(); }
+    private void VideoOptions(object sender, RoutedEventArgs e)
+    {
+        if (Model.CanStart) new VideoOptionsWindow(Model.Link, Model.Destination, services) { Owner = this }.ShowDialog();
+    }
     private void Stop(object sender, RoutedEventArgs e) => Model.Stop();
     private void SkipCurrent(object sender, RoutedEventArgs e) => Model.SkipCurrent();
     private void ChooseDestination(object sender, RoutedEventArgs e)
