@@ -189,7 +189,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var estimate = rendition.EstimatedBytes ?? 0;
             remaining -= estimate;
             var fileBytes = 0L;
-            var format = selection.AudioOnly ? "M4A" : selection.Ffmpeg is null ? "MPEG-TS" : "MP4";
+            var format = selection.AudioOnly ? "MP3" : selection.Ffmpeg is null ? "MPEG-TS" : "MP4";
             pendingEvents.Enqueue(new StatusChanged($"Скачиваю {rendition.Height}p → {format} · {file.Name}"));
             pendingEvents.Enqueue(new FileStarted(file.RemotePath, estimate, false));
             try

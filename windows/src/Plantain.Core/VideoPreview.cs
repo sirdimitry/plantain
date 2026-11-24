@@ -289,7 +289,7 @@ public sealed class VideoPreviewClient : IDisposable
         var names = file.Name.Split('/');
         var parent = Path.GetFullPath(destination);
         foreach (var folder in names[..^1]) parent = PathSafety.Child(parent, folder);
-        var ext = audioOnly ? "m4a" : ffmpeg is null ? "ts" : "mp4";
+        var ext = audioOnly ? "mp3" : ffmpeg is null ? "ts" : "mp4";
         var label = audioOnly ? $"звук, {variant.Height}p" : $"{variant.Height}p";
         var name = $"{Path.GetFileNameWithoutExtension(names[^1])} ({label}).{ext}";
         PathSafety.ValidateName(name);
@@ -346,9 +346,11 @@ public sealed class VideoPreviewClient : IDisposable
         foreach (var arg in new[] { "-nostdin", "-loglevel", "error", "-protocol_whitelist", "pipe",
             "-f", "mpegts", "-i", "pipe:0", "-map", audioOnly ? "0:a:0" : "0:v:0" })
             info.ArgumentList.Add(arg);
-        if (!audioOnly) { info.ArgumentList.Add("-map"); info.ArgumentList.Add("0:a:0?"); }
-        foreach (var arg in new[] { "-c", "copy", "-bsf:a", "aac_adtstoasc", "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
-            "-f", "mp4", "pipe:1" }) info.ArgumentList.Add(arg);
+        var outputArguments = audioOnly
+            ? new[] { "-c:a", "libmp3lame", "-q:a", "2", "-f", "mp3", "pipe:1" }
+            : new[] { "-map", "0:a:0?", "-c", "copy", "-bsf:a", "aac_adtstoasc",
+                "-movflags", "+frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1" };
+        foreach (var arg in outputArguments) info.ArgumentList.Add(arg);
         using var process = Process.Start(info) ?? throw new LoaderException("Не удалось запустить FFmpeg.");
         void StopProcess() { try { if (!process.HasExited) process.Kill(); } catch (InvalidOperationException) { } }
         using var registration = token.Register(StopProcess);

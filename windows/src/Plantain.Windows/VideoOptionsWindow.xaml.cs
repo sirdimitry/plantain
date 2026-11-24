@@ -124,7 +124,7 @@ public partial class VideoOptionsWindow : Window
         FormatNote.Text = option.Mode switch
         {
             Mode.Original => "Файлы сохраняются в исходном виде.",
-            Mode.Audio => "Сохранится дорожка M4A. Размер относится к трафику видеопотока.",
+            Mode.Audio => "Сохранится MP3. Оценка размера относится к трафику видеопотока.",
             _ => ffmpeg is null ? "Превью сохранится в MPEG-TS. Для MP4 и звука нужен FFmpeg в PATH."
                 : "Превью сохранится в MP4."
         };

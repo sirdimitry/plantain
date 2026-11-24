@@ -2,7 +2,7 @@ param([string]$Package, [Parameter(Mandatory)][string]$Destination)
 $ErrorActionPreference = 'Stop'
 if (!$Package) { $Package = Join-Path (Split-Path $PSScriptRoot -Parent) '.tools/ffmpeg' }
 $Package = (Resolve-Path -LiteralPath $Package).Path
-$files = 'ffmpeg.exe', 'COPYING.LGPLv2.1', 'BUILD.txt', 'ffmpeg-9.1.tar.xz'
+$files = 'ffmpeg.exe', 'COPYING.LGPLv2.1', 'COPYING.LAME', 'BUILD.txt', 'build-media-tool.sh', 'ffmpeg-9.1.tar.xz', 'lame_3.100.orig.tar.gz'
 foreach ($file in $files) {
     if (!(Test-Path -LiteralPath (Join-Path $Package $file) -PathType Leaf)) { throw "Incomplete bundled FFmpeg: $file" }
 }

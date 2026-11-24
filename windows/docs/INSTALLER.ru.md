@@ -20,7 +20,7 @@
 
 ## Сборка
 
-Для ZIP и установщика нужен комплект FFmpeg для Windows x64. GitHub Actions собирает его из исходников автоматически. Для ручной сборки запустите `bash windows/scripts/build-ffmpeg.sh <каталог>` на Linux с MinGW x64 и передайте каталог обоим скриптам через `-FfmpegPackage`. Лицензия LGPL 2.1 или новее, исходный архив и команда сборки входят в файлы приложения. [Лицензирование FFmpeg](https://ffmpeg.org/legal.html)
+Для ZIP и установщика нужен комплект FFmpeg для Windows x64. GitHub Actions собирает его из исходников автоматически. Для ручной сборки запустите `bash scripts/build-media-tool.sh windows-x64 <каталог>` на Linux с MinGW x64 и передайте каталог обоим скриптам через `-FfmpegPackage`. Комплект включает лицензии, исходные архивы FFmpeg и LAME и скрипт сборки. [Лицензирование FFmpeg](https://ffmpeg.org/legal.html)
 
 Нужны .NET 10 SDK и [Inno Setup 7.1.1](https://jrsoftware.org/isdl.php). Inno — только инструмент разработчика; пользователю устанавливать его не нужно. Локальный путь компилятора — `windows/.tools/inno-7.1.1/ISCC.exe`; также принимается `installer.ps1 -Iscc 'путь\ISCC.exe'` или ISCC из PATH. Автоматической загрузки/запуска компилятора сборочный скрипт не выполняет.
 

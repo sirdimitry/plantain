@@ -21,7 +21,7 @@ if ((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash -ne $installer
 $tag = "windows-v$version"
 $notes = Join-Path $windowsRoot "artifacts/packages/$revision/release-notes.md"
 $body = "Подорожник для Windows $version.`n`nУстановщик Windows 10/11 x64: скачайте Setup.exe, установите и открывайте Подорожник ярлыком в меню «Пуск». .NET включена, установка без интернета и обязательных прав администратора. ZIP — переносной вариант без установки. SHA-256 находится рядом с каждым файлом.`n`nЕсть версия для macOS: https://github.com/sirdimitry/plantain/blob/main/README.md`n`nИзменения и ограничения: https://github.com/sirdimitry/plantain/blob/windows/windows/CHANGELOG.md`n"
-$body += "`nВ «Качество видео…» можно выбрать MP4 или «Только звук» (M4A). Компонент FFmpeg входит в комплект под LGPL 2.1 или новее. Лицензия, исходный код и параметры сборки находятся в папке ffmpeg.`n"
+$body += "`nВ «Качество видео…» можно выбрать MP4 или «Только звук» (MP3). Компонент FFmpeg входит в комплект под LGPL 2.1 или новее. Лицензия, исходный код и параметры сборки находятся в папке ffmpeg.`n"
 [IO.File]::WriteAllText($notes, $body, [Text.UTF8Encoding]::new($false))
 if (!$Publish) {
     Write-Output "Ready: $tag; Setup.exe + ZIP + SHA256. To publish explicitly, run release.ps1 -Publish."
