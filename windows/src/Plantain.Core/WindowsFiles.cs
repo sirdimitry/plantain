@@ -135,7 +135,7 @@ internal static class WindowsFiles
         return handle;
     }
 
-    private static string NativePath(string path)
+    internal static string NativePath(string path)
     {
         var full = Path.GetFullPath(path);
         return full.StartsWith(@"\\?\", StringComparison.Ordinal) ? full :

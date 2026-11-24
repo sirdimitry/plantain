@@ -8,7 +8,10 @@ namespace Plantain.Core.Tests;
 internal static class WindowsFixtures
 {
     internal static void HardLink(string name, string target)
-    { if (!CreateHardLinkW(name, target, IntPtr.Zero)) throw new Win32Exception(Marshal.GetLastWin32Error()); }
+    {
+        if (!CreateHardLinkW(WindowsFiles.NativePath(name), WindowsFiles.NativePath(target), IntPtr.Zero))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
 
     internal static void Junction(string path, string target)
     {
