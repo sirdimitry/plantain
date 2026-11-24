@@ -328,7 +328,7 @@ public sealed class VideoPreviewClient : IDisposable
             "-f", "mpegts", "-i", "pipe:0", "-map", audioOnly ? "0:a:0" : "0:v:0" })
             info.ArgumentList.Add(arg);
         if (!audioOnly) { info.ArgumentList.Add("-map"); info.ArgumentList.Add("0:a:0?"); }
-        foreach (var arg in new[] { "-c", "copy", "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
+        foreach (var arg in new[] { "-c", "copy", "-bsf:a", "aac_adtstoasc", "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
             "-f", "mp4", "pipe:1" }) info.ArgumentList.Add(arg);
         using var process = Process.Start(info) ?? throw new LoaderException("Не удалось запустить FFmpeg.");
         void StopProcess() { try { if (!process.HasExited) process.Kill(); } catch (InvalidOperationException) { } }
