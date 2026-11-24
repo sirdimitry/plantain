@@ -14,7 +14,9 @@ public partial class VideoOptionsWindow : Window
     private sealed record Option(Mode Mode, int Height, string Title)
     {
         internal VideoRendition? Rendition(VideoPreviewFile file) => Mode == Mode.Audio
-            ? file.Renditions.FirstOrDefault() : file.Renditions.FirstOrDefault(variant => variant.Height == Height);
+            ? file.Renditions.OrderBy(variant => variant.EstimatedBytes ?? long.MaxValue)
+                .ThenBy(variant => variant.Height).FirstOrDefault()
+            : file.Renditions.FirstOrDefault(variant => variant.Height == Height);
         internal bool Includes(VideoPreviewFile file) => Mode == Mode.Original
             ? file.OriginalBytes.HasValue : Rendition(file) is not null;
         internal long? Size(VideoPreviewFile file) => Mode == Mode.Original ? file.OriginalBytes : Rendition(file)?.EstimatedBytes;
